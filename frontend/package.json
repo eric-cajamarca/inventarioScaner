@@ -1,0 +1,8 @@
+{
+  "name": "inventario-scanner-frontend",
+  "private": true,
+  "description": "Sirve la UI estática en el puerto 4200 (ejecutar desde esta carpeta).",
+  "scripts": {
+    "start": "npx serve . --listen tcp://0.0.0.0:4200"
+  }
+}

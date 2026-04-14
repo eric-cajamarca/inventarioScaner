@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#2563eb" />
+    <title>Inventario Scanner</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="loadingOverlay" class="loading-overlay" aria-hidden="true">
+      <div class="loading-card">
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="loadingText">Cargando…</p>
+      </div>
+    </div>
+
+    <main class="container">
+      <header class="app-header">
+        <h1>Inventario Scanner</h1>
+        <button type="button" id="abrirModalSyncStock" class="btn-secondary btn-sync-header">
+          Sincronizar Stock (export web)
+        </button>
+      </header>
+      <p class="muted">
+        <strong>Cámara:</strong> con <strong>Iniciar escaneo</strong> verás el
+        video (en el móvil por Wi‑Fi a veces el navegador bloquea la cámara en
+        vivo: entonces usa <strong>Foto desde celular</strong>). Con
+        <strong>Capturar foto</strong> se toma un fotograma del video; si no hay
+        video, se abre la cámara o galería del teléfono. Luego se intenta leer el
+        <strong>código de barras</strong>; si no, dibuja un rectángulo sobre el
+        texto (dedo o ratón) y <strong>Buscar texto en zona</strong>.
+        <strong>Volver a cámara</strong> reanuda el video si estaba activo.
+        También puedes buscar escribiendo en el cuadro de texto.
+      </p>
+      <input
+        type="file"
+        id="inputFotoProducto"
+        accept="image/*"
+        capture="environment"
+        hidden
+        aria-hidden="true"
+      />
+
+      <section class="scanner-card">
+        <div class="scanner-shell" id="scannerShell">
+          <div id="scanner" class="scanner-live" aria-label="Vista de cámara"></div>
+          <canvas id="canvasVisor" class="canvas-visor" width="640" height="480" hidden></canvas>
+          <div id="rectSeleccion" class="rect-seleccion" hidden></div>
+        </div>
+        <div class="controls controls-row">
+          <button type="button" id="escanearBtn" class="btn-primary">
+            Iniciar escaneo
+          </button>
+          <button type="button" id="fotoArchivoBtn" class="btn-secondary">
+            Foto desde celular
+          </button>
+          <button type="button" id="capturarFotoBtn" class="btn-secondary">
+            Capturar foto
+          </button>
+          <button type="button" id="buscarZonaBtn" class="btn-secondary">
+            Buscar texto en zona
+          </button>
+          <button type="button" id="volverCamaraBtn" class="btn-secondary">
+            Volver a cámara
+          </button>
+        </div>
+        <div class="controls">
+          <input
+            id="codigoInput"
+            type="text"
+            placeholder="Código, nombre de producto o palabra clave"
+          />
+          <button type="button" id="buscarBtn">Buscar en Excel</button>
+        </div>
+        <p id="estado" class="estado" data-fase="idle">
+          Estado: Pulsa «Iniciar escaneo» o escribe un código.
+        </p>
+        <pre id="ocrVista" class="ocr-vista" hidden></pre>
+      </section>
+
+      <section class="result-card" id="panelProducto" hidden>
+        <h2>Producto</h2>
+        <div class="panel-grid">
+          <div><span class="label">Código</span><strong id="prodCodigo">—</strong></div>
+          <div class="panel-celda-descripcion">
+            <label class="label" for="productoDescripcionInput"
+              >Descripción — columna «Producto»</label
+            >
+            <textarea
+              id="productoDescripcionInput"
+              class="input-descripcion-producto"
+              rows="3"
+              maxlength="4000"
+              placeholder="Nombre o descripción (se guarda al guardar stock real)"
+            ></textarea>
+          </div>
+          <div><span class="label">Marca</span><span id="prodMarca">—</span></div>
+          <div><span class="label">Categoría</span><span id="prodCat">—</span></div>
+          <div>
+            <span class="label">Stock (catálogo)</span>
+            <strong class="stock-destacado" id="prodStock">—</strong>
+          </div>
+          <div>
+            <span class="label">Stock real actual</span>
+            <span id="prodStockRealActual">—</span>
+          </div>
+        </div>
+        <div class="stock-edit-row">
+          <p class="stock-edit-hint">
+            Elige qué columnas actualizar. Por defecto solo se guarda
+            <strong>STOCK REAL</strong>; la columna <strong>Stock</strong> no se
+            modifica a menos que marques la casilla correspondiente. La
+            <strong>descripción</strong> (columna Producto) se guarda solo cuando
+            guardas <strong>stock real</strong>.
+          </p>
+          <div class="stock-fields-grid">
+            <div>
+              <label for="stockCatalogoInput">Stock (catálogo) — columna «Stock»</label>
+              <input
+                id="stockCatalogoInput"
+                type="number"
+                min="0"
+                step="1"
+                inputmode="numeric"
+                placeholder="0"
+              />
+              <label class="chk-inline">
+                <input type="checkbox" id="chkGuardarStock" />
+                Guardar esta columna en Excel
+              </label>
+            </div>
+            <div>
+              <label for="stockRealInput">Stock real — columna «STOCK REAL»</label>
+              <input
+                id="stockRealInput"
+                type="number"
+                min="0"
+                step="1"
+                inputmode="numeric"
+                placeholder="0"
+              />
+              <label class="chk-inline">
+                <input type="checkbox" id="chkGuardarStockReal" checked />
+                Guardar esta columna en Excel
+              </label>
+            </div>
+          </div>
+          <button type="button" id="guardarStockBtn" class="btn-primary">
+            Guardar en Excel
+          </button>
+          <p id="mensajeStock" class="mensaje-stock" role="status"></p>
+        </div>
+      </section>
+
+      <section class="result-card">
+        <h2>Resultados de búsqueda</h2>
+        <p id="resumenBusqueda" class="muted">
+          Busca por código o por texto del producto; los resultados unen ambas coincidencias.
+        </p>
+        <div class="table-wrap">
+          <table class="tabla-similares">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Producto</th>
+                <th>Marca</th>
+                <th>Stock</th>
+                <th>Stock real</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="resultadosBody"></tbody>
+          </table>
+        </div>
+        <p id="sinResultados" class="muted" hidden>Sin coincidencias.</p>
+      </section>
+    </main>
+
+    <div
+      id="modalSyncStock"
+      class="modal-root"
+      hidden
+      aria-hidden="true"
+    >
+      <div class="modal-backdrop" id="modalSyncStockBackdrop" tabindex="-1"></div>
+      <div
+        class="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modalSyncStockTitle"
+      >
+        <h2 id="modalSyncStockTitle">Sincronizar columna Stock</h2>
+        <p class="muted modal-desc">
+          Sube el Excel descargado del sistema web. Se empareja por
+          <strong>código</strong> y solo se actualiza la columna
+          <strong>Stock</strong> del archivo del servidor
+          (<code>backend/data/productos.xlsx</code>). No se modifica
+          <strong>STOCK REAL</strong> ni <strong>Modificacion</strong>.
+        </p>
+        <label class="sync-file-label" for="syncStockFile">Archivo exportado (.xlsx / .xls)</label>
+        <input
+          id="syncStockFile"
+          type="file"
+          accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        />
+        <div class="modal-actions">
+          <button type="button" id="cerrarModalSyncStock" class="btn-secondary">
+            Cerrar
+          </button>
+          <button type="button" id="ejecutarSyncStock" class="btn-primary">
+            Ejecutar comparación
+          </button>
+        </div>
+        <pre id="syncStockResultado" class="sync-resultado" hidden></pre>
+      </div>
+    </div>
+
+    <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
