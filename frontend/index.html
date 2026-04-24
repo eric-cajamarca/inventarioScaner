@@ -108,6 +108,10 @@
             <span class="label">Stock real actual</span>
             <span id="prodStockRealActual">—</span>
           </div>
+          <div>
+            <span class="label">Verificado en Excel</span>
+            <strong id="prodVerificadoActual">—</strong>
+          </div>
         </div>
         <div class="stock-edit-row">
           <p class="stock-edit-hint">
@@ -115,7 +119,9 @@
             <strong>STOCK REAL</strong>; la columna <strong>Stock</strong> no se
             modifica a menos que marques la casilla correspondiente. La
             <strong>descripción</strong> (columna Producto) se guarda solo cuando
-            guardas <strong>stock real</strong>.
+            guardas <strong>stock real</strong>. La columna
+            <strong>Verificado</strong> solo se escribe si marcas su casilla
+            (puedes guardar solo verificado sin cambiar cantidades).
           </p>
           <div class="stock-fields-grid">
             <div>
@@ -146,6 +152,17 @@
               <label class="chk-inline">
                 <input type="checkbox" id="chkGuardarStockReal" checked />
                 Guardar esta columna en Excel
+              </label>
+            </div>
+            <div class="stock-verificado-col">
+              <span class="label-like">Columna «Verificado»</span>
+              <p class="muted stock-verificado-desc">
+                Marca el producto como validado varias veces (se guarda «Sí» en
+                Excel).
+              </p>
+              <label class="chk-inline">
+                <input type="checkbox" id="chkGuardarVerificado" checked />
+                Guardar verificado en Excel
               </label>
             </div>
           </div>
@@ -200,7 +217,43 @@
           <strong>Stock</strong> del archivo del servidor
           (<code>backend/data/productos.xlsx</code>). No se modifica
           <strong>STOCK REAL</strong> ni <strong>Modificacion</strong>.
+          Si una fila ya tiene <strong>Stock</strong> igual a
+          <strong>STOCK REAL</strong> y <strong>Modificacion</strong> con
+          fecha, no se actualiza su Stock (cuenta como verificada).
         </p>
+        <div id="resumenStockVsRealBox" class="sync-resumen-stock">
+          <div class="sync-resumen-stock__head">
+            <p class="sync-resumen-stock__title">
+              Resumen catálogo (solo filas con STOCK REAL informado)
+            </p>
+            <button
+              type="button"
+              id="btnRefrescarResumenStock"
+              class="btn-secondary sync-resumen-stock__btn"
+            >
+              Refrescar resumen
+            </button>
+          </div>
+          <ul class="sync-resumen-stock__list">
+            <li>
+              <span id="resumenDifNegativa">—</span>
+              · productos diferencia negativa (STOCK REAL menor que Stock)
+            </li>
+            <li>
+              <span id="resumenDifPositiva">—</span>
+              · productos diferencia positiva (STOCK REAL mayor que Stock)
+            </li>
+            <li>
+              <span id="resumenStockConforme">—</span>
+              · productos stock conforme
+            </li>
+            <li>
+              <span id="resumenProductosVerificados">—</span>
+              · productos verificados (columna Verificado)
+            </li>
+          </ul>
+          <p id="resumenStockVsRealAviso" class="muted sync-resumen-stock__aviso" hidden></p>
+        </div>
         <label class="sync-file-label" for="syncStockFile">Archivo exportado (.xlsx / .xls)</label>
         <input
           id="syncStockFile"

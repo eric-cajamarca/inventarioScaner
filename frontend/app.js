@@ -42,6 +42,8 @@ const stockCatalogoInput = document.getElementById("stockCatalogoInput");
 const stockRealInput = document.getElementById("stockRealInput");
 const chkGuardarStock = document.getElementById("chkGuardarStock");
 const chkGuardarStockReal = document.getElementById("chkGuardarStockReal");
+const chkGuardarVerificado = document.getElementById("chkGuardarVerificado");
+const prodVerificadoActual = document.getElementById("prodVerificadoActual");
 const guardarStockBtn = document.getElementById("guardarStockBtn");
 const mensajeStock = document.getElementById("mensajeStock");
 const abrirModalSyncStock = document.getElementById("abrirModalSyncStock");
@@ -51,6 +53,14 @@ const cerrarModalSyncStock = document.getElementById("cerrarModalSyncStock");
 const ejecutarSyncStock = document.getElementById("ejecutarSyncStock");
 const syncStockFile = document.getElementById("syncStockFile");
 const syncStockResultado = document.getElementById("syncStockResultado");
+const resumenDifNegativa = document.getElementById("resumenDifNegativa");
+const resumenDifPositiva = document.getElementById("resumenDifPositiva");
+const resumenStockConforme = document.getElementById("resumenStockConforme");
+const resumenProductosVerificados = document.getElementById(
+  "resumenProductosVerificados"
+);
+const resumenStockVsRealAviso = document.getElementById("resumenStockVsRealAviso");
+const btnRefrescarResumenStock = document.getElementById("btnRefrescarResumenStock");
 
 let ultimoCodigoProcesado = "";
 let ultimoTimestamp = 0;
@@ -110,6 +120,12 @@ function renderPanelProducto(p) {
     }
     chkGuardarStock.checked = false;
     chkGuardarStockReal.checked = true;
+    if (chkGuardarVerificado) {
+      chkGuardarVerificado.checked = true;
+    }
+    if (prodVerificadoActual) {
+      prodVerificadoActual.textContent = "—";
+    }
     mensajeStock.textContent = "";
     mensajeStock.className = "mensaje-stock";
     return;
@@ -136,6 +152,12 @@ function renderPanelProducto(p) {
   stockRealInput.value = sr;
   chkGuardarStock.checked = false;
   chkGuardarStockReal.checked = true;
+  if (chkGuardarVerificado) {
+    chkGuardarVerificado.checked = true;
+  }
+  if (prodVerificadoActual) {
+    prodVerificadoActual.textContent = p.verificado === true ? "Sí" : "No";
+  }
   mensajeStock.textContent = "";
   mensajeStock.className = "mensaje-stock";
 }
@@ -224,14 +246,20 @@ async function guardarStockEnExcel() {
 
   const guardarStock = chkGuardarStock.checked;
   const guardarReal = chkGuardarStockReal.checked;
+  const guardarVerificado = chkGuardarVerificado && chkGuardarVerificado.checked;
 
-  if (!guardarStock && !guardarReal) {
-    mensajeStock.textContent = "Marca al menos una columna para guardar.";
+  if (!guardarStock && !guardarReal && !guardarVerificado) {
+    mensajeStock.textContent =
+      "Marca al menos una opción para guardar (stock, stock real o verificado).";
     mensajeStock.className = "mensaje-stock err";
     return;
   }
 
   const body = { codigo: codigoProductoPanel };
+
+  if (guardarVerificado) {
+    body.verificado = true;
+  }
 
   if (guardarStock) {
     const rawS = stockCatalogoInput.value.trim();
@@ -275,6 +303,9 @@ async function guardarStockEnExcel() {
   if (body.stockReal !== undefined) {
     partes.push(`Stock real = ${body.stockReal}`);
     partes.push("Descripción (Producto)");
+  }
+  if (body.verificado === true) {
+    partes.push("Verificado = Sí");
   }
 
   guardandoStock = true;
@@ -1044,6 +1075,111 @@ codigoInputEl.addEventListener("keydown", (event) => {
 
 guardarStockBtn.addEventListener("click", () => guardarStockEnExcel());
 
+function pintarResumenStockVsReal(resumen) {
+  if (
+    !resumenDifNegativa ||
+    !resumenDifPositiva ||
+    !resumenStockConforme ||
+    !resumenProductosVerificados
+  ) {
+    return;
+  }
+  if (!resumen || !resumen.disponible) {
+    resumenDifNegativa.textContent = "—";
+    resumenDifPositiva.textContent = "—";
+    resumenStockConforme.textContent = "—";
+    resumenProductosVerificados.textContent = "—";
+    if (resumenStockVsRealAviso) {
+      resumenStockVsRealAviso.hidden = false;
+      resumenStockVsRealAviso.textContent =
+        "No se puede calcular el resumen: en el catálogo hacen falta las columnas Código, Stock y STOCK REAL.";
+    }
+    return;
+  }
+  if (resumenStockVsRealAviso) {
+    resumenStockVsRealAviso.hidden = true;
+    resumenStockVsRealAviso.textContent = "";
+  }
+  resumenDifNegativa.textContent = String(resumen.productosDiferenciaNegativa);
+  resumenDifPositiva.textContent = String(resumen.productosDiferenciaPositiva);
+  resumenStockConforme.textContent = String(resumen.productosStockConforme);
+  resumenProductosVerificados.textContent = String(
+    resumen.productosVerificados ?? 0
+  );
+}
+
+function resetResumenStockVsRealAlAbrirModal() {
+  if (
+    resumenDifNegativa &&
+    resumenDifPositiva &&
+    resumenStockConforme &&
+    resumenProductosVerificados
+  ) {
+    resumenDifNegativa.textContent = "—";
+    resumenDifPositiva.textContent = "—";
+    resumenStockConforme.textContent = "—";
+    resumenProductosVerificados.textContent = "—";
+  }
+  if (resumenStockVsRealAviso) {
+    resumenStockVsRealAviso.hidden = false;
+    resumenStockVsRealAviso.textContent =
+      "Pulsa «Refrescar resumen» para cargar los totales (no se actualizan solos al guardar un producto).";
+  }
+}
+
+async function cargarResumenStockVsRealDesdeServidor() {
+  if (
+    resumenDifNegativa &&
+    resumenDifPositiva &&
+    resumenStockConforme &&
+    resumenProductosVerificados
+  ) {
+    resumenDifNegativa.textContent = "…";
+    resumenDifPositiva.textContent = "…";
+    resumenStockConforme.textContent = "…";
+    resumenProductosVerificados.textContent = "…";
+  }
+  if (resumenStockVsRealAviso) {
+    resumenStockVsRealAviso.hidden = false;
+    resumenStockVsRealAviso.textContent = "Cargando resumen…";
+  }
+  if (btnRefrescarResumenStock) {
+    btnRefrescarResumenStock.disabled = true;
+  }
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/productos/resumen-stock-vs-real`
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok || !data.resumen) {
+      throw new Error(data.message || "No se pudo obtener el resumen.");
+    }
+    pintarResumenStockVsReal(data.resumen);
+  } catch (error) {
+    if (
+      resumenDifNegativa &&
+      resumenDifPositiva &&
+      resumenStockConforme &&
+      resumenProductosVerificados
+    ) {
+      resumenDifNegativa.textContent = "—";
+      resumenDifPositiva.textContent = "—";
+      resumenStockConforme.textContent = "—";
+      resumenProductosVerificados.textContent = "—";
+    }
+    if (resumenStockVsRealAviso) {
+      resumenStockVsRealAviso.hidden = false;
+      resumenStockVsRealAviso.textContent =
+        error.message || "Error al cargar el resumen del catálogo.";
+    }
+    console.error("Resumen stock vs real:", error);
+  } finally {
+    if (btnRefrescarResumenStock) {
+      btnRefrescarResumenStock.disabled = false;
+    }
+  }
+}
+
 function abrirModalSincronizarStock() {
   if (!modalSyncStock) {
     return;
@@ -1058,6 +1194,7 @@ function abrirModalSincronizarStock() {
   if (syncStockFile) {
     syncStockFile.value = "";
   }
+  resetResumenStockVsRealAlAbrirModal();
 }
 
 function cerrarModalSincronizarStock() {
@@ -1073,12 +1210,31 @@ function formatearResumenSyncStock(data) {
     return data?.message || "Error desconocido.";
   }
   const m = data.meta || {};
+  const rs = m.resumenStockVsReal;
+  const bloqueResumen =
+    rs && rs.disponible
+      ? [
+          "— Resumen catálogo (filas con STOCK REAL informado) —",
+          `Productos diferencia negativa: ${rs.productosDiferenciaNegativa}`,
+          `Productos diferencia positiva: ${rs.productosDiferenciaPositiva}`,
+          `Productos stock conforme: ${rs.productosStockConforme}`,
+          `Productos verificados: ${rs.productosVerificados ?? 0}`,
+          ""
+        ]
+      : rs && !rs.disponible
+        ? [
+            "— Resumen catálogo: no disponible (faltan columnas en el Excel) —",
+            ""
+          ]
+        : [];
   const lineas = [
+    ...bloqueResumen,
     `Hoja del export: ${m.nombreHojaExport || "—"}`,
     `Columnas detectadas en export: código «${m.encabezadoCodigo || "—"}», stock «${m.encabezadoStock || "—"}»`,
     `Filas válidas en export (código + stock): ${m.filasConCodigoYStock ?? "—"}`,
     `Filas omitidas en export (código vacío o stock inválido): ${m.filasOmitidas ?? "—"}`,
     `Filas del catálogo emparejadas con el export: ${m.filasCatalogoConCoincidencia ?? "—"}`,
+    `Filas omitidas (Stock = STOCK REAL y Modificacion con fecha; no se toca Stock): ${m.filasStockOmitidasPorVerificacion ?? "—"}`,
     `Celdas Stock con valor distinto (se escribió nuevo valor): ${m.filasStockValorCambiado ?? "—"}`,
     `Filas con mismo stock (sin cambiar archivo): ${m.filasStockSinCambio ?? "—"}`,
     `¿Se guardó el Excel del servidor?: ${m.archivoCatalogoEscrito ? "Sí" : "No"}`,
@@ -1129,6 +1285,9 @@ async function ejecutarSincronizarStockDesdeExport() {
       syncStockResultado.classList.remove("err");
       syncStockResultado.textContent = formatearResumenSyncStock(data);
     }
+    if (data.meta?.resumenStockVsReal) {
+      pintarResumenStockVsReal(data.meta.resumenStockVsReal);
+    }
     setEstado(
       data.meta?.archivoCatalogoEscrito
         ? "Stock del catálogo actualizado desde el export."
@@ -1164,6 +1323,11 @@ if (modalSyncStockBackdrop) {
 }
 if (ejecutarSyncStock) {
   ejecutarSyncStock.addEventListener("click", () => ejecutarSincronizarStockDesdeExport());
+}
+if (btnRefrescarResumenStock) {
+  btnRefrescarResumenStock.addEventListener("click", () =>
+    cargarResumenStockVsRealDesdeServidor()
+  );
 }
 
 document.addEventListener("keydown", (ev) => {

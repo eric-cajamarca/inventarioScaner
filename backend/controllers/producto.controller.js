@@ -33,6 +33,9 @@ async function guardarStocks(req, res, next) {
     if (Object.prototype.hasOwnProperty.call(req.body, "producto")) {
       payload.producto = req.body.producto;
     }
+    if (Object.prototype.hasOwnProperty.call(req.body, "verificado")) {
+      payload.verificado = req.body.verificado;
+    }
     const resultado = await productoService.actualizarStocks(codigo, payload);
     res.json({ ok: true, ...resultado });
   } catch (error) {
@@ -54,9 +57,19 @@ async function sincronizarStockExport(req, res, next) {
   }
 }
 
+async function resumenStockVsReal(req, res, next) {
+  try {
+    const resumen = await productoService.obtenerResumenDiscrepanciasStock();
+    res.json({ ok: true, resumen });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   buscarProducto,
   buscarPorOcr,
   guardarStocks,
-  sincronizarStockExport
+  sincronizarStockExport,
+  resumenStockVsReal
 };

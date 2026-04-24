@@ -83,6 +83,12 @@ function normalizarProducto(fila) {
     ])
   ).trim();
 
+  const verificadoRaw = primerValor(fila, [
+    "Verificado",
+    "VERIFICADO",
+    "verificado"
+  ]);
+
   return {
     codigo,
     producto,
@@ -92,8 +98,20 @@ function normalizarProducto(fila) {
     almacen,
     stock: Number.isFinite(stockNum) ? stockNum : stockRaw,
     stockReal: Number.isFinite(stockRealNum) ? stockRealNum : stockRealRaw,
-    modificacion: modificacion || undefined
+    modificacion: modificacion || undefined,
+    verificado: celdaVerificadoEsSi(verificadoRaw)
   };
+}
+
+function celdaVerificadoEsSi(raw) {
+  if (raw === true || raw === 1) {
+    return true;
+  }
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (!s) {
+    return false;
+  }
+  return ["sí", "si", "1", "true", "yes", "x", "verificado", "ok", "v"].includes(s);
 }
 
 function obtenerProductosDesdeExcel() {
@@ -158,20 +176,165 @@ function indiceColumnaStockCatalogo(filaEncabezado) {
   return -1;
 }
 
+/** Entero redondeado o null si no es número finito (misma idea que en sincronizar stock). */
+function enteroStockONull(celda) {
+  const n = Number(celda);
+  return Number.isFinite(n) ? Math.round(n) : null;
+}
+
+/**
+ * True si la celda Modificacion parece un registro de fecha/hora (guardado al verificar stock real
+ * o fecha típica de Excel). Evita sobrescribir Stock en sincronización cuando ya hubo verificación.
+ */
+function modificacionIndicaVerificado(celda) {
+  if (celda === undefined || celda === null) {
+    return false;
+  }
+  if (
+    typeof celda === "number" &&
+    Number.isFinite(celda) &&
+    celda >= 30000 &&
+    celda < 1e7
+  ) {
+    return true;
+  }
+  const s = String(celda).trim();
+  if (!s) {
+    return false;
+  }
+  if (/\d{4}-\d{2}-\d{2}/.test(s) || /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(s)) {
+    return true;
+  }
+  return false;
+}
+
+function stockRealCeldaEsVacia(celda) {
+  if (celda === undefined || celda === null) {
+    return true;
+  }
+  return String(celda).trim() === "";
+}
+
+/**
+ * Cuenta productos con código: compara Stock vs STOCK REAL.
+ * No cuenta filas con STOCK REAL vacío. Stock vacío o no numérico se trata como 0.
+ * Positiva: STOCK REAL mayor que Stock. Negativa: STOCK REAL menor que Stock. Conforme: iguales.
+ */
+function resumenDiscrepanciasStockVsRealAoA(aoa) {
+  const sinDatos = {
+    disponible: false,
+    productosDiferenciaNegativa: 0,
+    productosDiferenciaPositiva: 0,
+    productosStockConforme: 0,
+    productosVerificados: 0
+  };
+  if (!aoa || !aoa.length) {
+    return sinDatos;
+  }
+  const encabezado = aoa[0];
+  const idxCodigo = indiceColumnaEncabezado(encabezado, [
+    "Código",
+    "Codigo",
+    "CODIGO"
+  ]);
+  const idxStockCat = indiceColumnaStockCatalogo(encabezado);
+  const idxStockReal = indiceColumnaEncabezado(encabezado, [
+    "STOCK REAL",
+    "Stock real",
+    "Stock Real"
+  ]);
+  const idxVerificado = indiceColumnaEncabezado(encabezado, [
+    "Verificado",
+    "VERIFICADO",
+    "verificado"
+  ]);
+  if (idxCodigo < 0 || idxStockCat < 0 || idxStockReal < 0) {
+    return sinDatos;
+  }
+  const maxIdx = Math.max(
+    idxCodigo,
+    idxStockCat,
+    idxStockReal,
+    idxVerificado >= 0 ? idxVerificado : -1
+  );
+  let productosDiferenciaNegativa = 0;
+  let productosDiferenciaPositiva = 0;
+  let productosStockConforme = 0;
+  let productosVerificados = 0;
+  for (let r = 1; r < aoa.length; r++) {
+    const fila = aoa[r];
+    if (!fila.length) {
+      continue;
+    }
+    const celdaCod = fila[idxCodigo];
+    const clave = normalizarCodigoParaComparar(
+      celdaCod != null ? String(celdaCod) : ""
+    );
+    if (!clave) {
+      continue;
+    }
+    while (fila.length <= maxIdx) {
+      fila.push("");
+    }
+    if (idxVerificado >= 0 && celdaVerificadoEsSi(fila[idxVerificado])) {
+      productosVerificados += 1;
+    }
+    const celdaReal = fila[idxStockReal];
+    if (stockRealCeldaEsVacia(celdaReal)) {
+      continue;
+    }
+    const realNum = enteroStockONull(celdaReal);
+    if (realNum === null) {
+      continue;
+    }
+    const stockNumRaw = enteroStockONull(fila[idxStockCat]);
+    const stockVal = stockNumRaw === null ? 0 : stockNumRaw;
+    if (realNum === stockVal) {
+      productosStockConforme += 1;
+    } else if (realNum > stockVal) {
+      productosDiferenciaPositiva += 1;
+    } else {
+      productosDiferenciaNegativa += 1;
+    }
+  }
+  return {
+    disponible: true,
+    productosDiferenciaNegativa,
+    productosDiferenciaPositiva,
+    productosStockConforme,
+    productosVerificados
+  };
+}
+
+function obtenerResumenDiscrepanciasStockDesdeExcel() {
+  const workbook = XLSX.readFile(EXCEL_PATH, { dense: false, cellDates: false });
+  const nombreHoja = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[nombreHoja];
+  const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+  return resumenDiscrepanciasStockVsRealAoA(aoa);
+}
+
 /**
  * Actualiza solo las columnas indicadas. No toca Stock si no envías `stock`;
  * no toca STOCK REAL si no envías `stockReal`.
  * Si envías `producto` junto con `stockReal`, actualiza la columna Producto (descripción).
+ * `verificado` true escribe «Sí» en la columna Verificado; false deja la celda vacía.
  */
 function actualizarStocksPorCodigo(codigoBusqueda, updates) {
-  const { stock, stockReal, producto } = updates;
+  const { stock, stockReal, producto, verificado } = updates;
   const escribirStock = stock !== undefined && stock !== null;
   const escribirReal = stockReal !== undefined && stockReal !== null;
   const escribirProducto =
     escribirReal &&
     Object.prototype.hasOwnProperty.call(updates, "producto");
-  if (!escribirStock && !escribirReal) {
-    throw new Error("No hay valores para guardar (stock o stockReal).");
+  const escribirVerificado = Object.prototype.hasOwnProperty.call(
+    updates,
+    "verificado"
+  );
+  if (!escribirStock && !escribirReal && !escribirVerificado) {
+    throw new Error(
+      "No hay valores para guardar (stock, stockReal o verificado)."
+    );
   }
 
   const workbook = XLSX.readFile(EXCEL_PATH, { dense: false, cellDates: false });
@@ -229,6 +392,16 @@ function actualizarStocksPorCodigo(codigoBusqueda, updates) {
     encabezado.push("Modificacion");
   }
 
+  let idxVerificado = indiceColumnaEncabezado(encabezado, [
+    "Verificado",
+    "VERIFICADO",
+    "verificado"
+  ]);
+  if (escribirVerificado && idxVerificado < 0) {
+    idxVerificado = encabezado.length;
+    encabezado.push("Verificado");
+  }
+
   const indices = [idxCodigo];
   if (escribirStock) {
     indices.push(idxStockCat);
@@ -239,6 +412,9 @@ function actualizarStocksPorCodigo(codigoBusqueda, updates) {
   }
   if (escribirProducto) {
     indices.push(idxProducto);
+  }
+  if (escribirVerificado) {
+    indices.push(idxVerificado);
   }
   const maxCol = Math.max(...indices);
 
@@ -264,6 +440,9 @@ function actualizarStocksPorCodigo(codigoBusqueda, updates) {
       }
       if (escribirProducto) {
         fila[idxProducto] = String(producto ?? "").trim();
+      }
+      if (escribirVerificado) {
+        fila[idxVerificado] = verificado === true ? "Sí" : "";
       }
       actualizado = true;
 
@@ -314,10 +493,28 @@ function sincronizarStockCatalogoDesdeExportBuffer(buffer) {
     );
   }
 
-  const maxCol = Math.max(idxCodigo, idxStockCat);
+  const idxStockReal = indiceColumnaEncabezado(encabezado, [
+    "STOCK REAL",
+    "Stock real",
+    "Stock Real"
+  ]);
+  const idxModificacion = indiceColumnaEncabezado(encabezado, [
+    "Modificacion",
+    "Modificación",
+    "MODIFICACION",
+    "modificacion"
+  ]);
+
+  const maxCol = Math.max(
+    idxCodigo,
+    idxStockCat,
+    idxStockReal >= 0 ? idxStockReal : -1,
+    idxModificacion >= 0 ? idxModificacion : -1
+  );
   let filasCatalogoConStockDelExport = 0;
   let filasStockValorCambiado = 0;
   let filasStockSinCambio = 0;
+  let filasStockOmitidasPorVerificacion = 0;
   const clavesUsadas = new Set();
 
   for (let r = 1; r < aoa.length; r++) {
@@ -341,9 +538,24 @@ function sincronizarStockCatalogoDesdeExportBuffer(buffer) {
       fila.push("");
     }
     const nuevo = mapa.get(clave);
+    const stockCat = enteroStockONull(fila[idxStockCat]);
+    const stockRealCat =
+      idxStockReal >= 0 ? enteroStockONull(fila[idxStockReal]) : null;
+    const omitirPorVerificado =
+      idxStockReal >= 0 &&
+      idxModificacion >= 0 &&
+      stockCat !== null &&
+      stockRealCat !== null &&
+      stockCat === stockRealCat &&
+      modificacionIndicaVerificado(fila[idxModificacion]);
+
+    if (omitirPorVerificado) {
+      filasStockOmitidasPorVerificacion++;
+      continue;
+    }
+
     const anterior = fila[idxStockCat];
-    const antNum = Number(anterior);
-    const valAnt = Number.isFinite(antNum) ? Math.round(antNum) : null;
+    const valAnt = enteroStockONull(anterior);
     const mismo = valAnt === nuevo;
     fila[idxStockCat] = nuevo;
     if (mismo) {
@@ -362,12 +574,16 @@ function sincronizarStockCatalogoDesdeExportBuffer(buffer) {
     invalidateProductosCache();
   }
 
+  const resumenStockVsReal = resumenDiscrepanciasStockVsRealAoA(aoa);
+
   return {
     meta: {
       ...metaExport,
       filasCatalogoConCoincidencia: filasCatalogoConStockDelExport,
       filasStockValorCambiado,
       filasStockSinCambio,
+      filasStockOmitidasPorVerificacion,
+      resumenStockVsReal,
       codigosExportSinProductoEnCatalogo: sinProducto.slice(0, 80),
       totalCodigosExportSinProducto: sinProducto.length,
       archivoCatalogoEscrito: filasStockValorCambiado > 0
@@ -379,5 +595,6 @@ module.exports = {
   obtenerProductosDesdeExcel,
   actualizarStocksPorCodigo,
   invalidateProductosCache,
-  sincronizarStockCatalogoDesdeExportBuffer
+  sincronizarStockCatalogoDesdeExportBuffer,
+  obtenerResumenDiscrepanciasStockDesdeExcel
 };

@@ -171,6 +171,7 @@ function validarEnteroNoNegativo(valor, nombreCampo) {
  * - Solo `stockReal`: actualiza únicamente STOCK REAL (Stock del catálogo no se modifica).
  * - Solo `stock`: actualiza únicamente Stock.
  * - Ambos: actualiza las dos.
+ * - `verificado` (boolean): columna Verificado sin tocar stock si no se envían.
  */
 async function actualizarStocks(codigo, payload) {
   const codigoLimpio = limpiarCodigo(codigo);
@@ -184,9 +185,13 @@ async function actualizarStocks(codigo, payload) {
     payload,
     "producto"
   );
+  const tieneVerificado = Object.prototype.hasOwnProperty.call(
+    payload,
+    "verificado"
+  );
 
-  if (!tieneStock && !tieneReal) {
-    throw new Error("Envía stock y/o stockReal para guardar.");
+  if (!tieneStock && !tieneReal && !tieneVerificado) {
+    throw new Error("Envía stock, stockReal y/o verificado para guardar.");
   }
 
   if (tieneProducto && !tieneReal) {
@@ -212,6 +217,12 @@ async function actualizarStocks(codigo, payload) {
     }
     actualizaciones.producto = desc;
   }
+  if (tieneVerificado) {
+    if (typeof payload.verificado !== "boolean") {
+      throw new Error("verificado debe ser true o false.");
+    }
+    actualizaciones.verificado = payload.verificado;
+  }
 
   const actualizado = productoRepository.actualizarStocksPorCodigo(
     codigoLimpio,
@@ -223,7 +234,8 @@ async function actualizarStocks(codigo, payload) {
     stockGuardado: tieneStock ? actualizaciones.stock : undefined,
     stockRealGuardado: tieneReal ? actualizaciones.stockReal : undefined,
     productoGuardado:
-      tieneReal && tieneProducto ? actualizaciones.producto : undefined
+      tieneReal && tieneProducto ? actualizaciones.producto : undefined,
+    verificadoGuardado: tieneVerificado ? actualizaciones.verificado : undefined
   };
 }
 
@@ -234,9 +246,14 @@ async function sincronizarStockDesdeExportBuffer(buffer) {
   return productoRepository.sincronizarStockCatalogoDesdeExportBuffer(buffer);
 }
 
+async function obtenerResumenDiscrepanciasStock() {
+  return productoRepository.obtenerResumenDiscrepanciasStockDesdeExcel();
+}
+
 module.exports = {
   buscarPorCodigo,
   buscarPorTextoOcr,
   actualizarStocks,
-  sincronizarStockDesdeExportBuffer
+  sincronizarStockDesdeExportBuffer,
+  obtenerResumenDiscrepanciasStock
 };

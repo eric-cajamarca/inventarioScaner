@@ -324,6 +324,20 @@ button:disabled {
   color: #475569;
 }
 
+.stock-verificado-col .label-like {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.stock-verificado-desc {
+  font-size: 0.8rem;
+  margin: 0 0 8px;
+  line-height: 1.35;
+}
+
 .stock-fields-grid input[type="number"] {
   width: 100%;
   max-width: 200px;
@@ -594,4 +608,57 @@ pre {
 .sync-resultado.err {
   background: #fef2f2;
   color: #991b1b;
+}
+
+.sync-resumen-stock {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.sync-resumen-stock__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.sync-resumen-stock__title {
+  margin: 0;
+  flex: 1;
+  min-width: 140px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.sync-resumen-stock__btn {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+}
+
+.sync-resumen-stock__list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.sync-resumen-stock__list li {
+  margin-bottom: 4px;
+}
+
+.sync-resumen-stock__list span {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.sync-resumen-stock__aviso {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
 }
