@@ -226,7 +226,9 @@ function resumenDiscrepanciasStockVsRealAoA(aoa) {
     productosDiferenciaNegativa: 0,
     productosDiferenciaPositiva: 0,
     productosStockConforme: 0,
-    productosVerificados: 0
+    productosVerificados: 0,
+    listaDiferenciaNegativa: [],
+    listaDiferenciaPositiva: []
   };
   if (!aoa || !aoa.length) {
     return sinDatos;
@@ -261,6 +263,8 @@ function resumenDiscrepanciasStockVsRealAoA(aoa) {
   let productosDiferenciaPositiva = 0;
   let productosStockConforme = 0;
   let productosVerificados = 0;
+  const listaDiferenciaNegativa = [];
+  const listaDiferenciaPositiva = [];
   for (let r = 1; r < aoa.length; r++) {
     const fila = aoa[r];
     if (!fila.length) {
@@ -293,8 +297,10 @@ function resumenDiscrepanciasStockVsRealAoA(aoa) {
       productosStockConforme += 1;
     } else if (realNum > stockVal) {
       productosDiferenciaPositiva += 1;
+      listaDiferenciaPositiva.push(productoDesdeFilaAoA(encabezado, fila));
     } else {
       productosDiferenciaNegativa += 1;
+      listaDiferenciaNegativa.push(productoDesdeFilaAoA(encabezado, fila));
     }
   }
   return {
@@ -302,7 +308,9 @@ function resumenDiscrepanciasStockVsRealAoA(aoa) {
     productosDiferenciaNegativa,
     productosDiferenciaPositiva,
     productosStockConforme,
-    productosVerificados
+    productosVerificados,
+    listaDiferenciaNegativa,
+    listaDiferenciaPositiva
   };
 }
 
@@ -311,7 +319,34 @@ function obtenerResumenDiscrepanciasStockDesdeExcel() {
   const nombreHoja = workbook.SheetNames[0];
   const sheet = workbook.Sheets[nombreHoja];
   const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-  return resumenDiscrepanciasStockVsRealAoA(aoa);
+  const totalProductosRegistrados = obtenerProductosDesdeExcel().length;
+  return {
+    ...resumenDiscrepanciasStockVsRealAoA(aoa),
+    totalProductosRegistrados
+  };
+}
+
+/**
+ * @param {"negativa"|"positiva"} tipo
+ */
+function obtenerListaDiscrepanciaStockVsRealDesdeExcel(tipo) {
+  const t = String(tipo || "").trim().toLowerCase();
+  if (t !== "negativa" && t !== "positiva") {
+    throw new Error('Parámetro "tipo" debe ser "negativa" o "positiva".');
+  }
+  const workbook = XLSX.readFile(EXCEL_PATH, { dense: false, cellDates: false });
+  const nombreHoja = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[nombreHoja];
+  const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+  const resumen = resumenDiscrepanciasStockVsRealAoA(aoa);
+  if (!resumen.disponible) {
+    throw new Error(
+      "No se puede listar: en el catálogo hacen falta las columnas Código, Stock y STOCK REAL."
+    );
+  }
+  return t === "negativa"
+    ? resumen.listaDiferenciaNegativa || []
+    : resumen.listaDiferenciaPositiva || [];
 }
 
 /**
@@ -463,11 +498,36 @@ function actualizarStocksPorCodigo(codigoBusqueda, updates) {
 }
 
 /**
- * Actualiza solo la columna Stock (catálogo) en productos.xlsx usando un Excel exportado
- * desde otro sistema. Mantiene encabezados y demás columnas del archivo en data.
+ * Crea una fila nueva en el catálogo a partir de datos del export (código, stock y columnas opcionales).
+ */
+function crearFilaCatalogoDesdeExport(encabezado, indices, datosExport) {
+  const fila = new Array(encabezado.length).fill("");
+  const escribir = (idx, valor) => {
+    if (idx < 0 || valor === undefined || valor === null) {
+      return;
+    }
+    const s = String(valor).trim();
+    if (s !== "") {
+      fila[idx] = valor;
+    }
+  };
+  escribir(indices.codigo, datosExport.codigo);
+  escribir(indices.stock, datosExport.stock);
+  escribir(indices.producto, datosExport.producto);
+  escribir(indices.categoria, datosExport.categoria);
+  escribir(indices.marca, datosExport.marca);
+  escribir(indices.unidadMedida, datosExport.unidadMedida);
+  escribir(indices.almacen, datosExport.almacen);
+  return fila;
+}
+
+/**
+ * Actualiza la columna Stock (catálogo) en productos.xlsx usando un Excel exportado
+ * desde otro sistema. Agrega filas nuevas para códigos del export que no existan en el catálogo.
  */
 function sincronizarStockCatalogoDesdeExportBuffer(buffer) {
-  const { mapa, meta: metaExport } = construirMapaStockDesdeExportBuffer(buffer);
+  const { mapa, filasPorClave, meta: metaExport } =
+    construirMapaStockDesdeExportBuffer(buffer);
 
   const workbook = XLSX.readFile(EXCEL_PATH, { dense: false, cellDates: false });
   const nombreHoja = workbook.SheetNames[0];
@@ -565,16 +625,67 @@ function sincronizarStockCatalogoDesdeExportBuffer(buffer) {
     }
   }
 
-  const sinProducto = [...mapa.keys()].filter((k) => !clavesUsadas.has(k));
+  const clavesNuevasEnExport = [...mapa.keys()].filter((k) => !clavesUsadas.has(k));
 
-  if (filasStockValorCambiado > 0) {
+  const indicesCatalogo = {
+    codigo: idxCodigo,
+    stock: idxStockCat,
+    producto: indiceColumnaEncabezado(encabezado, [
+      "Producto",
+      "PRODUCTO",
+      "producto"
+    ]),
+    categoria: indiceColumnaEncabezado(encabezado, [
+      "Categoría",
+      "Categoria",
+      "CATEGORIA"
+    ]),
+    marca: indiceColumnaEncabezado(encabezado, ["Marca", "MARCA", "marca"]),
+    unidadMedida: indiceColumnaEncabezado(encabezado, [
+      "UNIDAD MEDIDA",
+      "Unidad medida",
+      "Unidad Medida"
+    ]),
+    almacen: indiceColumnaEncabezado(encabezado, [
+      "Almacen",
+      "Almacén",
+      "ALMACEN"
+    ])
+  };
+
+  let productosNuevosAgregados = 0;
+  const codigosProductosNuevos = [];
+  const clavesSinAgregar = [];
+
+  for (const clave of clavesNuevasEnExport) {
+    const datos = filasPorClave.get(clave);
+    if (!datos) {
+      clavesSinAgregar.push(clave);
+      continue;
+    }
+    aoa.push(crearFilaCatalogoDesdeExport(encabezado, indicesCatalogo, datos));
+    clavesUsadas.add(clave);
+    productosNuevosAgregados += 1;
+    if (codigosProductosNuevos.length < 80) {
+      codigosProductosNuevos.push(datos.codigo || clave);
+    }
+  }
+
+  const sinProducto = clavesSinAgregar;
+  const archivoCatalogoEscrito =
+    filasStockValorCambiado > 0 || productosNuevosAgregados > 0;
+
+  if (archivoCatalogoEscrito) {
     const nuevaHoja = XLSX.utils.aoa_to_sheet(aoa);
     workbook.Sheets[nombreHoja] = nuevaHoja;
     XLSX.writeFile(workbook, EXCEL_PATH, { bookType: "xlsx" });
     invalidateProductosCache();
   }
 
-  const resumenStockVsReal = resumenDiscrepanciasStockVsRealAoA(aoa);
+  const resumenStockVsReal = {
+    ...resumenDiscrepanciasStockVsRealAoA(aoa),
+    totalProductosRegistrados: obtenerProductosDesdeExcel().length
+  };
 
   return {
     meta: {
@@ -583,10 +694,12 @@ function sincronizarStockCatalogoDesdeExportBuffer(buffer) {
       filasStockValorCambiado,
       filasStockSinCambio,
       filasStockOmitidasPorVerificacion,
+      productosNuevosAgregados,
+      codigosProductosNuevos,
       resumenStockVsReal,
       codigosExportSinProductoEnCatalogo: sinProducto.slice(0, 80),
       totalCodigosExportSinProducto: sinProducto.length,
-      archivoCatalogoEscrito: filasStockValorCambiado > 0
+      archivoCatalogoEscrito
     }
   };
 }
@@ -596,5 +709,6 @@ module.exports = {
   actualizarStocksPorCodigo,
   invalidateProductosCache,
   sincronizarStockCatalogoDesdeExportBuffer,
-  obtenerResumenDiscrepanciasStockDesdeExcel
+  obtenerResumenDiscrepanciasStockDesdeExcel,
+  obtenerListaDiscrepanciaStockVsRealDesdeExcel
 };

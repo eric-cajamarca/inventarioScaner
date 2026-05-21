@@ -24,6 +24,10 @@ const uploadExportStock = multer({
 });
 
 router.get("/resumen-stock-vs-real", productoController.resumenStockVsReal);
+router.get(
+  "/discrepancias-stock-lista",
+  productoController.listaDiscrepanciaStock
+);
 router.post("/buscar", productoController.buscarProducto);
 router.post("/buscar-ocr", productoController.buscarPorOcr);
 router.post("/stock-real", productoController.guardarStocks);

@@ -173,7 +173,7 @@
         </div>
       </section>
 
-      <section class="result-card">
+      <section class="result-card" id="resultadosBusquedaSection">
         <h2>Resultados de búsqueda</h2>
         <p id="resumenBusqueda" class="muted">
           Busca por código o por texto del producto; los resultados unen ambas coincidencias.
@@ -213,13 +213,16 @@
         <h2 id="modalSyncStockTitle">Sincronizar columna Stock</h2>
         <p class="muted modal-desc">
           Sube el Excel descargado del sistema web. Se empareja por
-          <strong>código</strong> y solo se actualiza la columna
-          <strong>Stock</strong> del archivo del servidor
-          (<code>backend/data/productos.xlsx</code>). No se modifica
-          <strong>STOCK REAL</strong> ni <strong>Modificacion</strong>.
-          Si una fila ya tiene <strong>Stock</strong> igual a
-          <strong>STOCK REAL</strong> y <strong>Modificacion</strong> con
-          fecha, no se actualiza su Stock (cuenta como verificada).
+          <strong>código</strong> en
+          <code>backend/data/productos.xlsx</code>: se actualiza la columna
+          <strong>Stock</strong> de productos existentes y se agregan filas
+          nuevas si el código del export no está en el catálogo (con código,
+          stock y, si vienen en el export, producto, categoría, marca, etc.).
+          No se modifica <strong>STOCK REAL</strong> ni
+          <strong>Modificacion</strong>. Si una fila ya tiene
+          <strong>Stock</strong> igual a <strong>STOCK REAL</strong> y
+          <strong>Modificacion</strong> con fecha, no se actualiza su Stock
+          (cuenta como verificada).
         </p>
         <div id="resumenStockVsRealBox" class="sync-resumen-stock">
           <div class="sync-resumen-stock__head">
@@ -236,12 +239,36 @@
           </div>
           <ul class="sync-resumen-stock__list">
             <li>
-              <span id="resumenDifNegativa">—</span>
-              · productos diferencia negativa (STOCK REAL menor que Stock)
+              <span id="resumenTotalProductosRegistrados">—</span>
+              · total de productos registrados (filas con código en el catálogo)
             </li>
-            <li>
-              <span id="resumenDifPositiva">—</span>
-              · productos diferencia positiva (STOCK REAL mayor que Stock)
+            <li class="sync-resumen-stock__row">
+              <span class="sync-resumen-stock__row-text">
+                <span id="resumenDifNegativa">—</span>
+                · productos diferencia negativa (STOCK REAL menor que Stock)
+              </span>
+              <button
+                type="button"
+                id="btnVerDifNegativa"
+                class="btn-secondary sync-resumen-stock__ver-lista"
+                disabled
+              >
+                Ver lista
+              </button>
+            </li>
+            <li class="sync-resumen-stock__row">
+              <span class="sync-resumen-stock__row-text">
+                <span id="resumenDifPositiva">—</span>
+                · productos diferencia positiva (STOCK REAL mayor que Stock)
+              </span>
+              <button
+                type="button"
+                id="btnVerDifPositiva"
+                class="btn-secondary sync-resumen-stock__ver-lista"
+                disabled
+              >
+                Ver lista
+              </button>
             </li>
             <li>
               <span id="resumenStockConforme">—</span>

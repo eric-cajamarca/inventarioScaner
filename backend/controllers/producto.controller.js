@@ -66,10 +66,21 @@ async function resumenStockVsReal(req, res, next) {
   }
 }
 
+async function listaDiscrepanciaStock(req, res, next) {
+  try {
+    const { tipo } = req.query;
+    const data = await productoService.obtenerListaDiscrepanciaStock(tipo);
+    res.json({ ok: true, ...data });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   buscarProducto,
   buscarPorOcr,
   guardarStocks,
   sincronizarStockExport,
-  resumenStockVsReal
+  resumenStockVsReal,
+  listaDiscrepanciaStock
 };

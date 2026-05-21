@@ -52,6 +52,40 @@ function indiceColumnaStockExport(filaEncabezado) {
   return -1;
 }
 
+function leerCeldaTexto(fila, idx) {
+  if (idx < 0 || !fila) {
+    return "";
+  }
+  const v = fila[idx];
+  return v !== undefined && v !== null ? String(v).trim() : "";
+}
+
+function indicesDatosProductoExport(encabezado) {
+  return {
+    producto: indiceEncabezado(encabezado, [
+      "Producto",
+      "PRODUCTO",
+      "Descripcion",
+      "Descripción",
+      "Nombre",
+      "Nombre producto"
+    ]),
+    categoria: indiceEncabezado(encabezado, [
+      "Categoría",
+      "Categoria",
+      "CATEGORIA"
+    ]),
+    marca: indiceEncabezado(encabezado, ["Marca", "MARCA"]),
+    unidadMedida: indiceEncabezado(encabezado, [
+      "UNIDAD MEDIDA",
+      "Unidad medida",
+      "Unidad Medida",
+      "Unidad"
+    ]),
+    almacen: indiceEncabezado(encabezado, ["Almacen", "Almacén", "ALMACEN"])
+  };
+}
+
 function parsearStockEnteroNoNegativo(valor) {
   if (valor === undefined || valor === null || valor === "") {
     return null;
@@ -108,6 +142,8 @@ function construirMapaStockDesdeExportBuffer(buffer) {
   }
 
   const mapa = new Map();
+  const filasPorClave = new Map();
+  const idxDatos = indicesDatosProductoExport(encabezado);
   let filasExportProcesadas = 0;
   let filasExportOmitidas = 0;
 
@@ -130,6 +166,15 @@ function construirMapaStockDesdeExportBuffer(buffer) {
       continue;
     }
     mapa.set(clave, stockVal);
+    filasPorClave.set(clave, {
+      codigo: codRaw != null ? String(codRaw).trim() : "",
+      stock: stockVal,
+      producto: leerCeldaTexto(fila, idxDatos.producto),
+      categoria: leerCeldaTexto(fila, idxDatos.categoria),
+      marca: leerCeldaTexto(fila, idxDatos.marca),
+      unidadMedida: leerCeldaTexto(fila, idxDatos.unidadMedida),
+      almacen: leerCeldaTexto(fila, idxDatos.almacen)
+    });
     filasExportProcesadas++;
   }
 
@@ -141,6 +186,7 @@ function construirMapaStockDesdeExportBuffer(buffer) {
 
   return {
     mapa,
+    filasPorClave,
     meta: {
       nombreHojaExport: nombreHoja,
       encabezadoCodigo: String(encabezado[idxCodigo] ?? "").trim(),

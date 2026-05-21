@@ -77,6 +77,12 @@ body {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
+.result-card--destacado {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+}
+
 .scanner-shell {
   position: relative;
   width: 100%;
@@ -651,6 +657,31 @@ pre {
 
 .sync-resumen-stock__list li {
   margin-bottom: 4px;
+}
+
+.sync-resumen-stock__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  margin-bottom: 6px;
+}
+
+.sync-resumen-stock__row-text {
+  flex: 1;
+  min-width: 160px;
+}
+
+.sync-resumen-stock__ver-lista {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+}
+
+.sync-resumen-stock__ver-lista:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .sync-resumen-stock__list span {

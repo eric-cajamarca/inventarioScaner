@@ -53,6 +53,9 @@ const cerrarModalSyncStock = document.getElementById("cerrarModalSyncStock");
 const ejecutarSyncStock = document.getElementById("ejecutarSyncStock");
 const syncStockFile = document.getElementById("syncStockFile");
 const syncStockResultado = document.getElementById("syncStockResultado");
+const resumenTotalProductosRegistrados = document.getElementById(
+  "resumenTotalProductosRegistrados"
+);
 const resumenDifNegativa = document.getElementById("resumenDifNegativa");
 const resumenDifPositiva = document.getElementById("resumenDifPositiva");
 const resumenStockConforme = document.getElementById("resumenStockConforme");
@@ -61,6 +64,14 @@ const resumenProductosVerificados = document.getElementById(
 );
 const resumenStockVsRealAviso = document.getElementById("resumenStockVsRealAviso");
 const btnRefrescarResumenStock = document.getElementById("btnRefrescarResumenStock");
+const btnVerDifNegativa = document.getElementById("btnVerDifNegativa");
+const btnVerDifPositiva = document.getElementById("btnVerDifPositiva");
+const resultadosBusquedaSection = document.getElementById(
+  "resultadosBusquedaSection"
+);
+
+/** Último resumen cargado (refrescar resumen o tras sincronizar). */
+let ultimoResumenStockVsReal = null;
 
 let ultimoCodigoProcesado = "";
 let ultimoTimestamp = 0;
@@ -1075,6 +1086,68 @@ codigoInputEl.addEventListener("keydown", (event) => {
 
 guardarStockBtn.addEventListener("click", () => guardarStockEnExcel());
 
+function actualizarBotonesVerDiscrepancia(resumen) {
+  const ok = Boolean(resumen?.disponible);
+  if (btnVerDifNegativa) {
+    btnVerDifNegativa.disabled =
+      !ok || (resumen?.productosDiferenciaNegativa ?? 0) === 0;
+  }
+  if (btnVerDifPositiva) {
+    btnVerDifPositiva.disabled =
+      !ok || (resumen?.productosDiferenciaPositiva ?? 0) === 0;
+  }
+}
+
+function pintarListaDiscrepanciaEnTablaResultados(lista, tipo) {
+  cerrarModalSincronizarStock();
+  ocrVistaEl.hidden = true;
+  renderPanelProducto(null);
+  const etiqueta =
+    tipo === "negativa"
+      ? "negativa (STOCK REAL menor que Stock)"
+      : "positiva (STOCK REAL mayor que Stock)";
+  resumenBusqueda.textContent = `${lista.length} producto(s) con diferencia ${etiqueta}.`;
+  resumenBusqueda.className = "";
+  renderTablaResultados(lista);
+  if (resultadosBusquedaSection) {
+    resultadosBusquedaSection.classList.add("result-card--destacado");
+    window.setTimeout(() => {
+      resultadosBusquedaSection.classList.remove("result-card--destacado");
+    }, 4000);
+    window.requestAnimationFrame(() => {
+      resultadosBusquedaSection.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    });
+  }
+  setEstado("Listado mostrado en la tabla de resultados de búsqueda.", "ok");
+}
+
+async function mostrarListaDiscrepanciaEnTabla(tipo) {
+  setCargando(true, "Cargando lista de productos…");
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/productos/discrepancias-stock-lista?tipo=${encodeURIComponent(tipo)}`
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.message || "No se pudo cargar la lista.");
+    }
+    const lista = Array.isArray(data.resultados) ? data.resultados : [];
+    if (!lista.length) {
+      setEstado("No hay productos en esa categoría.", "idle");
+      return;
+    }
+    pintarListaDiscrepanciaEnTablaResultados(lista, tipo);
+  } catch (error) {
+    setEstado(error.message || "Error al cargar la lista.", "error");
+    console.error("Lista discrepancia stock:", error);
+  } finally {
+    setCargando(false);
+  }
+}
+
 function pintarResumenStockVsReal(resumen) {
   if (
     !resumenDifNegativa ||
@@ -1084,7 +1157,25 @@ function pintarResumenStockVsReal(resumen) {
   ) {
     return;
   }
-  if (!resumen || !resumen.disponible) {
+  if (!resumen) {
+    ultimoResumenStockVsReal = null;
+    resumenDifNegativa.textContent = "—";
+    resumenDifPositiva.textContent = "—";
+    resumenStockConforme.textContent = "—";
+    resumenProductosVerificados.textContent = "—";
+    if (resumenTotalProductosRegistrados) {
+      resumenTotalProductosRegistrados.textContent = "—";
+    }
+    actualizarBotonesVerDiscrepancia(null);
+    return;
+  }
+  ultimoResumenStockVsReal = resumen;
+  if (resumenTotalProductosRegistrados) {
+    const tp = resumen.totalProductosRegistrados;
+    resumenTotalProductosRegistrados.textContent =
+      tp !== undefined && tp !== null ? String(tp) : "—";
+  }
+  if (!resumen.disponible) {
     resumenDifNegativa.textContent = "—";
     resumenDifPositiva.textContent = "—";
     resumenStockConforme.textContent = "—";
@@ -1094,6 +1185,7 @@ function pintarResumenStockVsReal(resumen) {
       resumenStockVsRealAviso.textContent =
         "No se puede calcular el resumen: en el catálogo hacen falta las columnas Código, Stock y STOCK REAL.";
     }
+    actualizarBotonesVerDiscrepancia(resumen);
     return;
   }
   if (resumenStockVsRealAviso) {
@@ -1106,6 +1198,7 @@ function pintarResumenStockVsReal(resumen) {
   resumenProductosVerificados.textContent = String(
     resumen.productosVerificados ?? 0
   );
+  actualizarBotonesVerDiscrepancia(resumen);
 }
 
 function resetResumenStockVsRealAlAbrirModal() {
@@ -1120,11 +1213,15 @@ function resetResumenStockVsRealAlAbrirModal() {
     resumenStockConforme.textContent = "—";
     resumenProductosVerificados.textContent = "—";
   }
+  if (resumenTotalProductosRegistrados) {
+    resumenTotalProductosRegistrados.textContent = "—";
+  }
   if (resumenStockVsRealAviso) {
     resumenStockVsRealAviso.hidden = false;
     resumenStockVsRealAviso.textContent =
       "Pulsa «Refrescar resumen» para cargar los totales (no se actualizan solos al guardar un producto).";
   }
+  actualizarBotonesVerDiscrepancia(ultimoResumenStockVsReal);
 }
 
 async function cargarResumenStockVsRealDesdeServidor() {
@@ -1138,6 +1235,9 @@ async function cargarResumenStockVsRealDesdeServidor() {
     resumenDifPositiva.textContent = "…";
     resumenStockConforme.textContent = "…";
     resumenProductosVerificados.textContent = "…";
+  }
+  if (resumenTotalProductosRegistrados) {
+    resumenTotalProductosRegistrados.textContent = "…";
   }
   if (resumenStockVsRealAviso) {
     resumenStockVsRealAviso.hidden = false;
@@ -1167,6 +1267,11 @@ async function cargarResumenStockVsRealDesdeServidor() {
       resumenStockConforme.textContent = "—";
       resumenProductosVerificados.textContent = "—";
     }
+    if (resumenTotalProductosRegistrados) {
+      resumenTotalProductosRegistrados.textContent = "—";
+    }
+    ultimoResumenStockVsReal = null;
+    actualizarBotonesVerDiscrepancia(null);
     if (resumenStockVsRealAviso) {
       resumenStockVsRealAviso.hidden = false;
       resumenStockVsRealAviso.textContent =
@@ -1195,6 +1300,7 @@ function abrirModalSincronizarStock() {
     syncStockFile.value = "";
   }
   resetResumenStockVsRealAlAbrirModal();
+  cargarResumenStockVsRealDesdeServidor();
 }
 
 function cerrarModalSincronizarStock() {
@@ -1211,10 +1317,17 @@ function formatearResumenSyncStock(data) {
   }
   const m = data.meta || {};
   const rs = m.resumenStockVsReal;
+  const lineaTotalRegistrados =
+    rs &&
+    rs.totalProductosRegistrados !== undefined &&
+    rs.totalProductosRegistrados !== null
+      ? `Total productos registrados en catálogo: ${rs.totalProductosRegistrados}`
+      : null;
   const bloqueResumen =
     rs && rs.disponible
       ? [
           "— Resumen catálogo (filas con STOCK REAL informado) —",
+          ...(lineaTotalRegistrados ? [lineaTotalRegistrados] : []),
           `Productos diferencia negativa: ${rs.productosDiferenciaNegativa}`,
           `Productos diferencia positiva: ${rs.productosDiferenciaPositiva}`,
           `Productos stock conforme: ${rs.productosStockConforme}`,
@@ -1224,6 +1337,7 @@ function formatearResumenSyncStock(data) {
       : rs && !rs.disponible
         ? [
             "— Resumen catálogo: no disponible (faltan columnas en el Excel) —",
+            ...(lineaTotalRegistrados ? [lineaTotalRegistrados] : []),
             ""
           ]
         : [];
@@ -1237,15 +1351,24 @@ function formatearResumenSyncStock(data) {
     `Filas omitidas (Stock = STOCK REAL y Modificacion con fecha; no se toca Stock): ${m.filasStockOmitidasPorVerificacion ?? "—"}`,
     `Celdas Stock con valor distinto (se escribió nuevo valor): ${m.filasStockValorCambiado ?? "—"}`,
     `Filas con mismo stock (sin cambiar archivo): ${m.filasStockSinCambio ?? "—"}`,
+    `Productos nuevos agregados al catálogo: ${m.productosNuevosAgregados ?? 0}`,
     `¿Se guardó el Excel del servidor?: ${m.archivoCatalogoEscrito ? "Sí" : "No"}`,
-    `Códigos en el export sin fila en el catálogo: ${m.totalCodigosExportSinProducto ?? 0}`
+    `Códigos del export no agregados al catálogo: ${m.totalCodigosExportSinProducto ?? 0}`
   ];
+  if (
+    Array.isArray(m.codigosProductosNuevos) &&
+    m.codigosProductosNuevos.length > 0
+  ) {
+    lineas.push(
+      `Ejemplos de productos nuevos: ${m.codigosProductosNuevos.join(", ")}`
+    );
+  }
   if (
     Array.isArray(m.codigosExportSinProductoEnCatalogo) &&
     m.codigosExportSinProductoEnCatalogo.length > 0
   ) {
     lineas.push(
-      `Ejemplos sin producto en catálogo: ${m.codigosExportSinProductoEnCatalogo.join(", ")}`
+      `Ejemplos no agregados: ${m.codigosExportSinProductoEnCatalogo.join(", ")}`
     );
   }
   return lineas.join("\n");
@@ -1288,12 +1411,24 @@ async function ejecutarSincronizarStockDesdeExport() {
     if (data.meta?.resumenStockVsReal) {
       pintarResumenStockVsReal(data.meta.resumenStockVsReal);
     }
-    setEstado(
-      data.meta?.archivoCatalogoEscrito
-        ? "Stock del catálogo actualizado desde el export."
-        : "Comparación lista; no había valores de Stock que cambiar.",
-      data.meta?.archivoCatalogoEscrito ? "ok" : "idle"
-    );
+    const meta = data.meta || {};
+    let mensajeEstado = "Comparación lista; no hubo cambios en el catálogo.";
+    if (meta.archivoCatalogoEscrito) {
+      const partes = [];
+      if ((meta.filasStockValorCambiado ?? 0) > 0) {
+        partes.push("Stock actualizado");
+      }
+      if ((meta.productosNuevosAgregados ?? 0) > 0) {
+        partes.push(
+          `${meta.productosNuevosAgregados} producto(s) nuevo(s) agregado(s)`
+        );
+      }
+      mensajeEstado =
+        partes.length > 0
+          ? `${partes.join("; ")} desde el export.`
+          : "Catálogo guardado desde el export.";
+    }
+    setEstado(mensajeEstado, meta.archivoCatalogoEscrito ? "ok" : "idle");
   } catch (error) {
     if (syncStockResultado) {
       syncStockResultado.hidden = false;
@@ -1328,6 +1463,20 @@ if (btnRefrescarResumenStock) {
   btnRefrescarResumenStock.addEventListener("click", () =>
     cargarResumenStockVsRealDesdeServidor()
   );
+}
+if (btnVerDifNegativa) {
+  btnVerDifNegativa.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    mostrarListaDiscrepanciaEnTabla("negativa");
+  });
+}
+if (btnVerDifPositiva) {
+  btnVerDifPositiva.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    mostrarListaDiscrepanciaEnTabla("positiva");
+  });
 }
 
 document.addEventListener("keydown", (ev) => {

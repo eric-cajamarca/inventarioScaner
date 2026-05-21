@@ -250,10 +250,17 @@ async function obtenerResumenDiscrepanciasStock() {
   return productoRepository.obtenerResumenDiscrepanciasStockDesdeExcel();
 }
 
+async function obtenerListaDiscrepanciaStock(tipo) {
+  const resultados =
+    productoRepository.obtenerListaDiscrepanciaStockVsRealDesdeExcel(tipo);
+  return { resultados, total: resultados.length };
+}
+
 module.exports = {
   buscarPorCodigo,
   buscarPorTextoOcr,
   actualizarStocks,
   sincronizarStockDesdeExportBuffer,
-  obtenerResumenDiscrepanciasStock
+  obtenerResumenDiscrepanciasStock,
+  obtenerListaDiscrepanciaStock
 };

@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "nodemon app.js",
     "start": "node app.js",
-    "test": "node --test"
+    "test": "node --test",
+    "excel:exportar-limpio": "node scripts/excel-exportar-limpio.js"
   },
   "keywords": [],
   "author": "",
