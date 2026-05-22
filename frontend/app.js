@@ -120,6 +120,10 @@ function val(v) {
   return String(v);
 }
 
+function textoVerificadoTabla(item) {
+  return item?.verificado === true ? "Sí" : "No";
+}
+
 function renderPanelProducto(p) {
   if (!p || !p.codigo) {
     panelProducto.hidden = true;
@@ -206,6 +210,7 @@ function renderTablaResultados(items) {
       <td>${escapeHtml(String(item.marca || ""))}</td>
       <td>${escapeHtml(val(item.stock))}</td>
       <td>${escapeHtml(val(item.stockReal))}</td>
+      <td class="celda-verif">${escapeHtml(textoVerificadoTabla(item))}</td>
       <td><button type="button" class="btn-elegir">Elegir</button></td>
     `;
     tr.querySelector("button").addEventListener("click", () => elegirProducto(item));
