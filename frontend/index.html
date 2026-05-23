@@ -120,8 +120,9 @@
             modifica a menos que marques la casilla correspondiente. La
             <strong>descripción</strong> (columna Producto) se guarda solo cuando
             guardas <strong>stock real</strong>. La columna
-            <strong>Verificado</strong> solo se escribe si marcas su casilla
-            (puedes guardar solo verificado sin cambiar cantidades).
+            <strong>Verificado</strong>: si la casilla está marcada se guarda
+            «Sí»; si está desmarcada, «NO VERIFICADO» (también al guardar solo
+            stock o stock real).
           </p>
           <div class="stock-fields-grid">
             <div>
@@ -157,12 +158,11 @@
             <div class="stock-verificado-col">
               <span class="label-like">Columna «Verificado»</span>
               <p class="muted stock-verificado-desc">
-                Marca el producto como validado varias veces (se guarda «Sí» en
-                Excel).
+                Marcada: «Sí» en Excel. Desmarcada: «NO VERIFICADO».
               </p>
               <label class="chk-inline">
-                <input type="checkbox" id="chkGuardarVerificado" checked />
-                Guardar verificado en Excel
+                <input type="checkbox" id="chkGuardarVerificado" />
+                Producto verificado (Sí)
               </label>
             </div>
           </div>

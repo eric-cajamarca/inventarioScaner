@@ -171,7 +171,7 @@ function validarEnteroNoNegativo(valor, nombreCampo) {
  * - Solo `stockReal`: actualiza únicamente STOCK REAL (Stock del catálogo no se modifica).
  * - Solo `stock`: actualiza únicamente Stock.
  * - Ambos: actualiza las dos.
- * - `verificado` (boolean): columna Verificado sin tocar stock si no se envían.
+ * - `verificado` (boolean): true → «Sí»; false → «NO VERIFICADO» en Excel.
  */
 async function actualizarStocks(codigo, payload) {
   const codigoLimpio = limpiarCodigo(codigo);

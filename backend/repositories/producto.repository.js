@@ -111,7 +111,14 @@ function celdaVerificadoEsSi(raw) {
   if (!s) {
     return false;
   }
+  if (/no\s*verificado/.test(s)) {
+    return false;
+  }
   return ["sí", "si", "1", "true", "yes", "x", "verificado", "ok", "v"].includes(s);
+}
+
+function textoVerificadoParaExcel(verificado) {
+  return verificado === true ? "Sí" : "NO VERIFICADO";
 }
 
 function obtenerProductosDesdeExcel() {
@@ -353,7 +360,7 @@ function obtenerListaDiscrepanciaStockVsRealDesdeExcel(tipo) {
  * Actualiza solo las columnas indicadas. No toca Stock si no envías `stock`;
  * no toca STOCK REAL si no envías `stockReal`.
  * Si envías `producto` junto con `stockReal`, actualiza la columna Producto (descripción).
- * `verificado` true escribe «Sí» en la columna Verificado; false deja la celda vacía.
+ * `verificado` true escribe «Sí»; false escribe «NO VERIFICADO» en la columna Verificado.
  */
 function actualizarStocksPorCodigo(codigoBusqueda, updates) {
   const { stock, stockReal, producto, verificado } = updates;
@@ -477,7 +484,7 @@ function actualizarStocksPorCodigo(codigoBusqueda, updates) {
         fila[idxProducto] = String(producto ?? "").trim();
       }
       if (escribirVerificado) {
-        fila[idxVerificado] = verificado === true ? "Sí" : "";
+        fila[idxVerificado] = textoVerificadoParaExcel(verificado);
       }
       actualizado = true;
 

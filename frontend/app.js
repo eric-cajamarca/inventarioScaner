@@ -136,7 +136,7 @@ function renderPanelProducto(p) {
     chkGuardarStock.checked = false;
     chkGuardarStockReal.checked = true;
     if (chkGuardarVerificado) {
-      chkGuardarVerificado.checked = true;
+      chkGuardarVerificado.checked = false;
     }
     if (prodVerificadoActual) {
       prodVerificadoActual.textContent = "—";
@@ -168,7 +168,7 @@ function renderPanelProducto(p) {
   chkGuardarStock.checked = false;
   chkGuardarStockReal.checked = true;
   if (chkGuardarVerificado) {
-    chkGuardarVerificado.checked = true;
+    chkGuardarVerificado.checked = p.verificado === true;
   }
   if (prodVerificadoActual) {
     prodVerificadoActual.textContent = p.verificado === true ? "Sí" : "No";
@@ -262,19 +262,22 @@ async function guardarStockEnExcel() {
 
   const guardarStock = chkGuardarStock.checked;
   const guardarReal = chkGuardarStockReal.checked;
-  const guardarVerificado = chkGuardarVerificado && chkGuardarVerificado.checked;
 
-  if (!guardarStock && !guardarReal && !guardarVerificado) {
+  const body = { codigo: codigoProductoPanel };
+
+  if (chkGuardarVerificado) {
+    body.verificado = chkGuardarVerificado.checked;
+  }
+
+  if (
+    !guardarStock &&
+    !guardarReal &&
+    !Object.prototype.hasOwnProperty.call(body, "verificado")
+  ) {
     mensajeStock.textContent =
       "Marca al menos una opción para guardar (stock, stock real o verificado).";
     mensajeStock.className = "mensaje-stock err";
     return;
-  }
-
-  const body = { codigo: codigoProductoPanel };
-
-  if (guardarVerificado) {
-    body.verificado = true;
   }
 
   if (guardarStock) {
@@ -322,6 +325,8 @@ async function guardarStockEnExcel() {
   }
   if (body.verificado === true) {
     partes.push("Verificado = Sí");
+  } else if (body.verificado === false) {
+    partes.push("Verificado = NO VERIFICADO");
   }
 
   guardandoStock = true;
