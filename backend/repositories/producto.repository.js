@@ -9,6 +9,22 @@ const {
 
 const EXCEL_PATH = path.join(__dirname, "..", "data", "productos.xlsx");
 
+const ENCABEZADOS_CODIGO = [
+  "Código",
+  "Codigo",
+  "CODIGO",
+  "codigo",
+  "Código Antiguo",
+  "Codigo Antiguo",
+  "CODIGO ANTIGUO",
+  "Código antiguo",
+  "Codigo antiguo",
+  "Cod. Antiguo",
+  "SKU",
+  "Código producto",
+  "Codigo producto"
+];
+
 /** Lista de productos en memoria; se invalida si cambia la fecha de modificación del .xlsx */
 let cacheProductos = null;
 let cacheProductosMtimeMs = null;
@@ -34,9 +50,7 @@ function primerValor(fila, clavesPosibles) {
 }
 
 function normalizarProducto(fila) {
-  const codigo = String(
-    primerValor(fila, ["Código", "Codigo", "CODIGO", "codigo"])
-  ).trim();
+  const codigo = String(primerValor(fila, ENCABEZADOS_CODIGO)).trim();
 
   const producto = String(
     primerValor(fila, ["Producto", "PRODUCTO", "producto"])
@@ -133,6 +147,11 @@ function obtenerProductosDesdeExcel() {
   const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
   cacheProductos = rows.map(normalizarProducto).filter((p) => p.codigo);
   cacheProductosMtimeMs = fs.statSync(EXCEL_PATH).mtimeMs;
+  if (rows.length > 0 && cacheProductos.length === 0) {
+    throw new Error(
+      "El Excel tiene filas, pero no se encontró una columna de código (Código o Código Antiguo)."
+    );
+  }
   return cacheProductos;
 }
 
@@ -241,11 +260,7 @@ function resumenDiscrepanciasStockVsRealAoA(aoa) {
     return sinDatos;
   }
   const encabezado = aoa[0];
-  const idxCodigo = indiceColumnaEncabezado(encabezado, [
-    "Código",
-    "Codigo",
-    "CODIGO"
-  ]);
+  const idxCodigo = indiceColumnaEncabezado(encabezado, ENCABEZADOS_CODIGO);
   const idxStockCat = indiceColumnaStockCatalogo(encabezado);
   const idxStockReal = indiceColumnaEncabezado(encabezado, [
     "STOCK REAL",
@@ -387,11 +402,7 @@ function actualizarStocksPorCodigo(codigoBusqueda, updates) {
     throw new Error("El archivo Excel no tiene filas.");
   }
   const encabezado = aoa[0];
-  const idxCodigo = indiceColumnaEncabezado(encabezado, [
-    "Código",
-    "Codigo",
-    "CODIGO"
-  ]);
+  const idxCodigo = indiceColumnaEncabezado(encabezado, ENCABEZADOS_CODIGO);
   const idxStockCat = indiceColumnaStockCatalogo(encabezado);
   const idxStockReal = indiceColumnaEncabezado(encabezado, [
     "STOCK REAL",
@@ -400,7 +411,9 @@ function actualizarStocksPorCodigo(codigoBusqueda, updates) {
   ]);
 
   if (idxCodigo < 0) {
-    throw new Error("No se encontró la columna Código en el Excel.");
+    throw new Error(
+      "No se encontró la columna Código (o Código Antiguo) en el Excel."
+    );
   }
   if (escribirStock && idxStockCat < 0) {
     throw new Error('No se encontró la columna "Stock" (catálogo) en el Excel.');
@@ -544,15 +557,13 @@ function sincronizarStockCatalogoDesdeExportBuffer(buffer) {
     throw new Error("El archivo de catálogo no tiene filas.");
   }
   const encabezado = aoa[0];
-  const idxCodigo = indiceColumnaEncabezado(encabezado, [
-    "Código",
-    "Codigo",
-    "CODIGO"
-  ]);
+  const idxCodigo = indiceColumnaEncabezado(encabezado, ENCABEZADOS_CODIGO);
   const idxStockCat = indiceColumnaStockCatalogo(encabezado);
 
   if (idxCodigo < 0) {
-    throw new Error("No se encontró la columna Código en el catálogo.");
+    throw new Error(
+      "No se encontró la columna Código (o Código Antiguo) en el catálogo."
+    );
   }
   if (idxStockCat < 0) {
     throw new Error(
