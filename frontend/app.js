@@ -250,8 +250,9 @@ function renderResumenBusqueda(resultado) {
   const n = lista.length;
   const meta = resultado.meta || {};
   if (n === 0) {
-    resumenBusqueda.textContent =
-      "Sin coincidencias en código ni en nombre de producto (ni campos relacionados).";
+    resumenBusqueda.textContent = meta.pedirZona
+      ? "Ningún código de la etiqueta coincidió. Usa «Buscar texto en zona» sobre el código."
+      : "Sin coincidencias en código ni en nombre de producto (ni campos relacionados).";
     resumenBusqueda.className = "muted";
     return;
   }
@@ -492,11 +493,51 @@ async function guardarStockEnExcel() {
   }
 }
 
+function aplicarEstadoResultadoBusqueda(data, opciones = {}) {
+  const meta = data?.meta || {};
+  const lista = Array.isArray(data?.resultados) ? data.resultados : [];
+  if (meta.pedirZona) {
+    const cand = (meta.candidatosOcr || []).join(", ") || "ninguno reconocible";
+    setEstado(
+      `Ningún código de la etiqueta está en el catálogo (${cand}). Dibuja un recuadro sobre el código y pulsa «Buscar texto en zona».`,
+      "error"
+    );
+    return;
+  }
+  if ((meta.coincidenciasExactas || 0) > 1) {
+    setEstado(
+      `Varios códigos de la etiqueta están en el catálogo (${(meta.candidatosCoincidentes || []).join(", ")}). Elige el producto correcto.`,
+      "ok"
+    );
+    return;
+  }
+  if (meta.candidatoCoincidente) {
+    codigoInputEl.value = meta.candidatoCoincidente;
+    setEstado(
+      `Encontrado por ${meta.candidatoCoincidente} (${meta.tiempoMs} ms).`,
+      "ok"
+    );
+    return;
+  }
+  if (opciones.camaraActiva && lista.length === 0 && !meta.coincidenciaExactaCodigo) {
+    setEstado(
+      "Ese código de barras no está en el catálogo. Usa «Capturar foto» para leer los otros códigos de la etiqueta.",
+      "idle"
+    );
+    return;
+  }
+  if (camaraActiva && quaggaListo && !modoFoto) {
+    setEstado(`Listo (${meta.tiempoMs ?? 0} ms). Cámara activa.`, "ok");
+    return;
+  }
+  setEstado(`Listo (${meta.tiempoMs ?? 0} ms).`, "ok");
+}
+
 async function buscarCodigo(codigo) {
   const codigoLimpio = String(codigo || "").trim();
   if (!codigoLimpio) {
     setEstado("Ingresa un código válido.", "error");
-    return;
+    return null;
   }
 
   ocrVistaEl.hidden = true;
@@ -516,14 +557,12 @@ async function buscarCodigo(codigo) {
     }
     const data = await response.json();
     renderResultado(data);
-    if (camaraActiva && quaggaListo && !modoFoto) {
-      setEstado(`Listo (${data.meta.tiempoMs} ms). Cámara activa.`, "ok");
-    } else {
-      setEstado(`Listo (${data.meta.tiempoMs} ms).`, "ok");
-    }
+    aplicarEstadoResultadoBusqueda(data, { camaraActiva: camaraActiva && !modoFoto });
+    return data;
   } catch (error) {
     setEstado("Error al consultar el servidor.", "error");
     console.error(error);
+    return null;
   } finally {
     buscandoEnExcel = false;
     setCargando(false);
@@ -535,13 +574,13 @@ async function buscarPorTextoOcr(texto) {
   const textoLimpio = String(texto || "").trim();
   if (!textoLimpio) {
     setEstado("No hay texto para buscar.", "error");
-    return;
+    return null;
   }
 
   buscandoEnExcel = true;
   actualizarBotonesCamara();
-  setCargando(true, "Buscando en el catálogo Excel…");
-  setEstado("Buscando en Excel…", "buscando");
+  setCargando(true, "Buscando códigos de la etiqueta…");
+  setEstado("Buscando códigos de la etiqueta…", "buscando");
 
   try {
     const response = await apiFetch("/api/productos/buscar-ocr", {
@@ -554,18 +593,29 @@ async function buscarPorTextoOcr(texto) {
     }
     const data = await response.json();
     renderResultado(data);
-    if (data.exacta) {
-      codigoInputEl.value = data.exacta.codigo;
+    if (data.meta?.candidatoCoincidente) {
+      codigoInputEl.value = data.meta.candidatoCoincidente;
+    } else if (data.resultados?.length === 1) {
+      codigoInputEl.value = data.resultados[0].codigo;
     }
-    setEstado(`Listo (${data.meta.tiempoMs} ms).`, "ok");
+    aplicarEstadoResultadoBusqueda(data);
+    return data;
   } catch (error) {
     setEstado("Error al consultar el servidor.", "error");
     console.error(error);
+    return null;
   } finally {
     buscandoEnExcel = false;
     setCargando(false);
     actualizarBotonesCamara();
   }
+}
+
+function hayCoincidenciaCatalogo(data) {
+  return Boolean(
+    data?.meta?.coincidenciaExactaCodigo ||
+      (Array.isArray(data?.resultados) && data.resultados.length > 0 && !data?.meta?.pedirZona)
+  );
 }
 
 function capturarFotogramaVideo() {
@@ -647,9 +697,7 @@ async function intentarCodigoBarrasEnCaptura() {
     const texto = result.getText().trim();
     if (texto) {
       codigoInputEl.value = texto;
-      await buscarCodigo(texto);
-      volverCamara();
-      return true;
+      return await buscarCodigo(texto);
     }
   } catch (error) {
     const esNoEncontrado =
@@ -661,7 +709,46 @@ async function intentarCodigoBarrasEnCaptura() {
   } finally {
     setCargando(false);
   }
-  return false;
+  return null;
+}
+
+async function leerOcrImagenCompleta() {
+  if (!canvasOrigen) {
+    return "";
+  }
+  if (typeof Tesseract === "undefined" || !Tesseract.createWorker) {
+    return "";
+  }
+  ocrEnProceso = true;
+  actualizarBotonesCamara();
+  setCargando(true, "Leyendo códigos de la etiqueta…");
+  let worker;
+  try {
+    worker = await Tesseract.createWorker("eng+spa");
+    let ret;
+    try {
+      ret = await worker.recognize(canvasOrigen);
+    } catch (e1) {
+      await worker.terminate();
+      worker = await Tesseract.createWorker("eng");
+      ret = await worker.recognize(canvasOrigen);
+    }
+    return ret?.data?.text || "";
+  } catch (error) {
+    console.error("OCR etiqueta completa:", error);
+    return "";
+  } finally {
+    if (worker) {
+      try {
+        await worker.terminate();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    ocrEnProceso = false;
+    setCargando(false);
+    actualizarBotonesCamara();
+  }
 }
 
 async function activarModoFotoDesdeCanvas(cap) {
@@ -688,13 +775,27 @@ async function activarModoFotoDesdeCanvas(cap) {
   dibujarVisorDesdeOrigen();
   actualizarBotonesCamara();
 
-  const leido = await intentarCodigoBarrasEnCaptura();
-  if (!leido) {
-    setEstado(
-      "Sin código de barras en toda la imagen. Dibuja un rectángulo sobre el texto y pulsa «Buscar texto en zona».",
-      "escaneando"
-    );
+  const dataBarras = await intentarCodigoBarrasEnCaptura();
+  if (hayCoincidenciaCatalogo(dataBarras)) {
+    volverCamara();
+    return;
   }
+
+  const textoOcr = await leerOcrImagenCompleta();
+  if (textoOcr.trim()) {
+    ocrVistaEl.hidden = false;
+    ocrVistaEl.textContent = `Texto de etiqueta:\n${textoOcr.trim()}`;
+    const dataOcr = await buscarPorTextoOcr(textoOcr);
+    if (hayCoincidenciaCatalogo(dataOcr)) {
+      volverCamara();
+      return;
+    }
+  }
+
+  setEstado(
+    "Ningún código de la etiqueta está en el catálogo. Dibuja un recuadro sobre el código (ej. CLT-45) y pulsa «Buscar texto en zona».",
+    "escaneando"
+  );
 }
 
 async function abrirSelectorFoto() {
@@ -868,8 +969,10 @@ async function buscarTextoEnZona() {
     const texto = ret?.data?.text || "";
     ocrVistaEl.hidden = false;
     ocrVistaEl.textContent = `Texto en zona:\n${texto.trim() || "(vacío)"}`;
-    await buscarPorTextoOcr(texto);
-    volverCamara();
+    const dataZona = await buscarPorTextoOcr(texto);
+    if (hayCoincidenciaCatalogo(dataZona)) {
+      volverCamara();
+    }
   } catch (error) {
     setEstado("Error en OCR de la zona.", "error");
     console.error(error);

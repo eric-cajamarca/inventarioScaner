@@ -103,37 +103,25 @@ async function buscarPorTextoOcr(texto) {
   const inicio = Date.now();
   const productos = productoRepository.obtenerProductosDesdeExcel();
   const candidatos = extraerCandidatosDesdeTexto(textoLimpio);
+  const exactas = [];
+  const vistos = new Set();
 
   for (const c of candidatos) {
     const exacta = coincidenciaExactaCodigo(productos, c);
-    if (exacta) {
-      const fuzzyExtra = buscarCoincidenciasAproximadas(
-        productos,
-        textoLimpio.replace(/\s+/g, " ").trim(),
-        35
-      );
-      const resultados = fusionarResultadosUnicos(exacta, fuzzyExtra, 30);
-      return {
-        resultados,
-        meta: {
-          tiempoMs: Date.now() - inicio,
-          totalCatalogo: productos.length,
-          modo: "ocr",
-          candidatosOcr: candidatos,
-          candidatoCoincidente: c,
-          coincidenciaExactaCodigo: true,
-          totalMostrados: resultados.length
-        }
-      };
+    if (!exacta) {
+      continue;
     }
+    const clave = normalizarCodigoParaComparar(exacta.codigo);
+    if (vistos.has(clave)) {
+      continue;
+    }
+    vistos.add(clave);
+    exactas.push({ producto: exacta, candidato: c });
   }
 
-  const terminosBusqueda = [
-    ...candidatos,
-    textoLimpio.replace(/\s+/g, " ").trim()
-  ];
-  const similares = fusionarSimilares(productos, terminosBusqueda, 35);
-  const resultados = fusionarResultadosUnicos(null, similares, 30);
+  const resultados = exactas.map((item) => item.producto);
+  const coincidenciasExactas = exactas.length;
+  const pedirZona = coincidenciasExactas === 0;
 
   return {
     resultados,
@@ -142,7 +130,12 @@ async function buscarPorTextoOcr(texto) {
       totalCatalogo: productos.length,
       modo: "ocr",
       candidatosOcr: candidatos,
-      coincidenciaExactaCodigo: false,
+      candidatoCoincidente:
+        coincidenciasExactas === 1 ? exactas[0].candidato : "",
+      candidatosCoincidentes: exactas.map((item) => item.candidato),
+      coincidenciaExactaCodigo: coincidenciasExactas > 0,
+      coincidenciasExactas,
+      pedirZona,
       totalMostrados: resultados.length
     }
   };

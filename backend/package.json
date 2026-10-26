@@ -8,7 +8,8 @@
     "test": "node --test",
     "excel:exportar-limpio": "node scripts/excel-exportar-limpio.js",
     "plantillas:generar": "node scripts/generar-plantillas.js",
-    "test:encoding": "node scripts/verificar-encoding-movimientos.js"
+    "test:encoding": "node scripts/verificar-encoding-movimientos.js",
+    "test:ocr-etiqueta": "node scripts/verificar-ocr-etiqueta.js"
   },
   "keywords": [],
   "author": "",
