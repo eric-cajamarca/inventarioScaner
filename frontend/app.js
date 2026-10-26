@@ -153,6 +153,8 @@ let buscandoEnExcel = false;
 let ocrEnProceso = false;
 let cargandoUi = false;
 let modoFoto = false;
+let tesseractWorker = null;
+let tesseractCola = Promise.resolve();
 /** @type {HTMLCanvasElement|null} */
 let canvasOrigen = null;
 let visorMap = null;
@@ -519,6 +521,20 @@ function aplicarEstadoResultadoBusqueda(data, opciones = {}) {
     );
     return;
   }
+  if (meta.modo === "zona") {
+    if (lista.length > 0) {
+      setEstado(
+        `${lista.length} coincidencia(s) en la zona. Elige el producto correcto.`,
+        "ok"
+      );
+      return;
+    }
+    setEstado(
+      "No hubo coincidencias con el texto de la zona. Marca otra área o busca por nombre.",
+      "error"
+    );
+    return;
+  }
   if (opciones.camaraActiva && lista.length === 0 && !meta.coincidenciaExactaCodigo) {
     setEstado(
       "Ese código de barras no está en el catálogo. Usa «Capturar foto» para leer los otros códigos de la etiqueta.",
@@ -570,7 +586,7 @@ async function buscarCodigo(codigo) {
   }
 }
 
-async function buscarPorTextoOcr(texto) {
+async function buscarPorTextoOcr(texto, opciones = {}) {
   const textoLimpio = String(texto || "").trim();
   if (!textoLimpio) {
     setEstado("No hay texto para buscar.", "error");
@@ -579,14 +595,18 @@ async function buscarPorTextoOcr(texto) {
 
   buscandoEnExcel = true;
   actualizarBotonesCamara();
-  setCargando(true, "Buscando códigos de la etiqueta…");
-  setEstado("Buscando códigos de la etiqueta…", "buscando");
+  const esZona = opciones.modo === "zona";
+  setCargando(true, esZona ? "Buscando coincidencias de la zona…" : "Buscando códigos de la etiqueta…");
+  setEstado(
+    esZona ? "Buscando coincidencias de la zona…" : "Buscando códigos de la etiqueta…",
+    "buscando"
+  );
 
   try {
     const response = await apiFetch("/api/productos/buscar-ocr", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ texto: textoLimpio })
+      body: JSON.stringify({ texto: textoLimpio, modo: opciones.modo || "ocr" })
     });
     if (!response.ok) {
       throw new Error("No se pudo consultar OCR.");
@@ -618,17 +638,62 @@ function hayCoincidenciaCatalogo(data) {
   );
 }
 
+function rectVisibleVideoCover(video, displayW, displayH) {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh || displayW < 2 || displayH < 2) {
+    return null;
+  }
+  const scale = Math.max(displayW / vw, displayH / vh);
+  const sw = Math.min(vw, displayW / scale);
+  const sh = Math.min(vh, displayH / scale);
+  const sx = Math.max(0, (vw - sw) / 2);
+  const sy = Math.max(0, (vh - sh) / 2);
+  return { sx, sy, sw, sh };
+}
+
 function capturarFotogramaVideo() {
-  const video = document.querySelector("#scanner video");
+  const video = obtenerVideoQuagga() || document.querySelector("#scanner video");
   if (!video || !video.videoWidth) {
     return null;
   }
+  const displayW = scannerShell?.clientWidth || video.clientWidth;
+  const displayH = scannerShell?.clientHeight || video.clientHeight;
+  const recorte = rectVisibleVideoCover(video, displayW, displayH);
   const canvas = document.createElement("canvas");
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  if (!recorte) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+    return canvas;
+  }
+  canvas.width = Math.max(1, Math.round(recorte.sw));
+  canvas.height = Math.max(1, Math.round(recorte.sh));
+  ctx.drawImage(
+    video,
+    recorte.sx,
+    recorte.sy,
+    recorte.sw,
+    recorte.sh,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
   return canvas;
+}
+
+function puntoEnVisor(ev) {
+  const r = canvasVisor.getBoundingClientRect();
+  const cw = visorMap?.cw || r.width || 1;
+  const ch = visorMap?.ch || r.height || 1;
+  return {
+    x: ((ev.clientX - r.left) / r.width) * cw,
+    y: ((ev.clientY - r.top) / r.height) * ch
+  };
 }
 
 function dibujarVisorDesdeOrigen() {
@@ -637,30 +702,27 @@ function dibujarVisorDesdeOrigen() {
   }
   const cw = scannerShell.clientWidth;
   const ch = scannerShell.clientHeight;
-  canvasVisor.width = cw;
-  canvasVisor.height = ch;
+  if (cw < 2 || ch < 2) {
+    return;
+  }
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvasVisor.width = Math.max(1, Math.round(cw * dpr));
+  canvasVisor.height = Math.max(1, Math.round(ch * dpr));
+  canvasVisor.style.width = `${cw}px`;
+  canvasVisor.style.height = `${ch}px`;
   const ctx = canvasVisor.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.fillStyle = "#0f172a";
   ctx.fillRect(0, 0, cw, ch);
   const w0 = canvasOrigen.width;
   const h0 = canvasOrigen.height;
-  const ir = w0 / h0;
-  const cr = cw / ch;
-  let dw;
-  let dh;
-  let ox;
-  let oy;
-  if (ir > cr) {
-    dw = cw;
-    dh = cw / ir;
-    ox = 0;
-    oy = (ch - dh) / 2;
-  } else {
-    dh = ch;
-    dw = ch * ir;
-    ox = (cw - dw) / 2;
-    oy = 0;
-  }
+  const scale = Math.min(cw / w0, ch / h0);
+  const dw = w0 * scale;
+  const dh = h0 * scale;
+  const ox = (cw - dw) / 2;
+  const oy = (ch - dh) / 2;
   ctx.drawImage(canvasOrigen, ox, oy, dw, dh);
   visorMap = { ox, oy, dw, dh, w0, h0, cw, ch };
 }
@@ -712,39 +774,61 @@ async function intentarCodigoBarrasEnCaptura() {
   return null;
 }
 
-async function leerOcrImagenCompleta() {
-  if (!canvasOrigen) {
-    return "";
-  }
+async function obtenerWorkerTesseract() {
   if (typeof Tesseract === "undefined" || !Tesseract.createWorker) {
-    return "";
+    throw new Error("Tesseract no está disponible.");
   }
-  ocrEnProceso = true;
-  actualizarBotonesCamara();
-  setCargando(true, "Leyendo códigos de la etiqueta…");
-  let worker;
+  if (tesseractWorker) {
+    return tesseractWorker;
+  }
   try {
-    worker = await Tesseract.createWorker("eng+spa");
-    let ret;
-    try {
-      ret = await worker.recognize(canvasOrigen);
-    } catch (e1) {
-      await worker.terminate();
-      worker = await Tesseract.createWorker("eng");
-      ret = await worker.recognize(canvasOrigen);
-    }
-    return ret?.data?.text || "";
+    tesseractWorker = await Tesseract.createWorker("eng+spa");
   } catch (error) {
-    console.error("OCR etiqueta completa:", error);
-    return "";
-  } finally {
-    if (worker) {
+    console.error("Tesseract eng+spa:", error);
+    tesseractWorker = await Tesseract.createWorker("eng");
+  }
+  return tesseractWorker;
+}
+
+async function reconocerConTesseract(imagen) {
+  const trabajo = tesseractCola.then(async () => {
+    let worker = await obtenerWorkerTesseract();
+    try {
+      const ret = await worker.recognize(imagen);
+      return ret?.data?.text || "";
+    } catch (error) {
+      console.error("Tesseract recognize:", error);
       try {
         await worker.terminate();
       } catch (e) {
         console.error(e);
       }
+      tesseractWorker = null;
+      worker = await obtenerWorkerTesseract();
+      const ret = await worker.recognize(imagen);
+      return ret?.data?.text || "";
     }
+  });
+  tesseractCola = trabajo.then(
+    () => undefined,
+    () => undefined
+  );
+  return trabajo;
+}
+
+async function leerOcrImagenCompleta() {
+  if (!canvasOrigen) {
+    return "";
+  }
+  ocrEnProceso = true;
+  actualizarBotonesCamara();
+  setCargando(true, "Leyendo códigos de la etiqueta…");
+  try {
+    return await reconocerConTesseract(canvasOrigen);
+  } catch (error) {
+    console.error("OCR etiqueta completa:", error);
+    return "";
+  } finally {
     ocrEnProceso = false;
     setCargando(false);
     actualizarBotonesCamara();
@@ -777,7 +861,10 @@ async function activarModoFotoDesdeCanvas(cap) {
 
   const dataBarras = await intentarCodigoBarrasEnCaptura();
   if (hayCoincidenciaCatalogo(dataBarras)) {
-    volverCamara();
+    setEstado(
+      "Producto encontrado. Puedes marcar otra zona en la misma foto o pulsar «Volver a cámara».",
+      "ok"
+    );
     return;
   }
 
@@ -787,13 +874,16 @@ async function activarModoFotoDesdeCanvas(cap) {
     ocrVistaEl.textContent = `Texto de etiqueta:\n${textoOcr.trim()}`;
     const dataOcr = await buscarPorTextoOcr(textoOcr);
     if (hayCoincidenciaCatalogo(dataOcr)) {
-      volverCamara();
+      setEstado(
+        "Producto encontrado. Puedes marcar otra zona en la misma foto o pulsar «Volver a cámara».",
+        "ok"
+      );
       return;
     }
   }
 
   setEstado(
-    "Ningún código de la etiqueta está en el catálogo. Dibuja un recuadro sobre el código (ej. CLT-45) y pulsa «Buscar texto en zona».",
+    "Ningún código de la etiqueta está en el catálogo. Dibuja un recuadro sobre el código (ej. SE-38991) y pulsa «Buscar texto en zona».",
     "escaneando"
   );
 }
@@ -920,6 +1010,9 @@ function obtenerSeleccionEnOrigen() {
 }
 
 async function buscarTextoEnZona() {
+  if (ocrEnProceso || buscandoEnExcel || cargandoUi) {
+    return;
+  }
   if (!modoFoto || !canvasOrigen) {
     setEstado(
       "Primero captura una foto del video, o usa «Foto desde celular» para cargar una imagen.",
@@ -932,15 +1025,14 @@ async function buscarTextoEnZona() {
     setEstado("Selecciona un área más grande sobre el texto (arrastra con el mouse).", "error");
     return;
   }
-  if (typeof Tesseract === "undefined" || !Tesseract.createWorker) {
-    setEstado("Tesseract no está disponible.", "error");
-    return;
-  }
-
+  const escala = Math.max(1, 400 / box.sw, 280 / box.sh);
   const crop = document.createElement("canvas");
-  crop.width = box.sw;
-  crop.height = box.sh;
-  crop.getContext("2d").drawImage(
+  crop.width = Math.max(1, Math.round(box.sw * escala));
+  crop.height = Math.max(1, Math.round(box.sh * escala));
+  const ctxCrop = crop.getContext("2d");
+  ctxCrop.imageSmoothingEnabled = true;
+  ctxCrop.imageSmoothingQuality = "high";
+  ctxCrop.drawImage(
     canvasOrigen,
     box.su0,
     box.sv0,
@@ -948,42 +1040,37 @@ async function buscarTextoEnZona() {
     box.sh,
     0,
     0,
-    box.sw,
-    box.sh
+    crop.width,
+    crop.height
   );
 
   ocrEnProceso = true;
   actualizarBotonesCamara();
   setCargando(true, "Leyendo texto en la zona seleccionada…");
-  let worker;
   try {
-    worker = await Tesseract.createWorker("eng+spa");
-    let ret;
-    try {
-      ret = await worker.recognize(crop);
-    } catch (e1) {
-      await worker.terminate();
-      worker = await Tesseract.createWorker("eng");
-      ret = await worker.recognize(crop);
-    }
-    const texto = ret?.data?.text || "";
+    const texto = await reconocerConTesseract(crop);
     ocrVistaEl.hidden = false;
     ocrVistaEl.textContent = `Texto en zona:\n${texto.trim() || "(vacío)"}`;
-    const dataZona = await buscarPorTextoOcr(texto);
+    if (!texto.trim()) {
+      setEstado(
+        "No se leyó texto en esa zona. Marca de nuevo el código (un poco más grande) y vuelve a pulsar «Buscar texto en zona».",
+        "error"
+      );
+      return;
+    }
+    const dataZona = await buscarPorTextoOcr(texto, { modo: "zona" });
+    seleccion = null;
+    rectSeleccion.hidden = true;
     if (hayCoincidenciaCatalogo(dataZona)) {
-      volverCamara();
+      setEstado(
+        "Producto encontrado. Puedes marcar otra zona en la misma foto o pulsar «Volver a cámara».",
+        "ok"
+      );
     }
   } catch (error) {
     setEstado("Error en OCR de la zona.", "error");
     console.error(error);
   } finally {
-    if (worker) {
-      try {
-        await worker.terminate();
-      } catch (e) {
-        console.error(e);
-      }
-    }
     ocrEnProceso = false;
     setCargando(false);
     actualizarBotonesCamara();
@@ -1227,10 +1314,8 @@ canvasVisor.addEventListener("pointerdown", (ev) => {
     console.error(e);
   }
   arrastrandoSeleccion = true;
-  const r = canvasVisor.getBoundingClientRect();
-  const x = ((ev.clientX - r.left) / r.width) * canvasVisor.width;
-  const y = ((ev.clientY - r.top) / r.height) * canvasVisor.height;
-  seleccion = { x0: x, y0: y, x1: x, y1: y };
+  const p = puntoEnVisor(ev);
+  seleccion = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
   actualizarRectVisual();
 });
 
@@ -1239,11 +1324,9 @@ canvasVisor.addEventListener("pointermove", (ev) => {
     return;
   }
   ev.preventDefault();
-  const r = canvasVisor.getBoundingClientRect();
-  const x = ((ev.clientX - r.left) / r.width) * canvasVisor.width;
-  const y = ((ev.clientY - r.top) / r.height) * canvasVisor.height;
-  seleccion.x1 = x;
-  seleccion.y1 = y;
+  const p = puntoEnVisor(ev);
+  seleccion.x1 = p.x;
+  seleccion.y1 = p.y;
   actualizarRectVisual();
 });
 

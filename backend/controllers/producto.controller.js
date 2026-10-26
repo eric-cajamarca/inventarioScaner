@@ -12,8 +12,8 @@ async function buscarProducto(req, res, next) {
 
 async function buscarPorOcr(req, res, next) {
   try {
-    const { texto } = req.body;
-    const resultado = await productoService.buscarPorTextoOcr(texto);
+    const { texto, modo } = req.body;
+    const resultado = await productoService.buscarPorTextoOcr(texto, { modo });
     res.json(resultado);
   } catch (error) {
     next(error);

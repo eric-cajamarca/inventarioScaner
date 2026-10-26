@@ -1,6 +1,6 @@
 const productoRepository = require("../repositories/producto.repository");
 const { buscarCoincidenciasAproximadas } = require("../utils/fuzzySearch");
-const { extraerCandidatosDesdeTexto } = require("../utils/ocrExtract");
+const { extraerCandidatosAmpliados } = require("../utils/ocrExtract");
 const {
   normalizarCodigoParaComparar
 } = require("../utils/normalizeCodigo");
@@ -94,15 +94,16 @@ function fusionarSimilares(productos, terminos, limite = 5) {
   return salida.slice(0, limite);
 }
 
-async function buscarPorTextoOcr(texto) {
+async function buscarPorTextoOcr(texto, opciones = {}) {
   const textoLimpio = String(texto || "").trim();
   if (!textoLimpio) {
     throw new Error("El campo texto es obligatorio para búsqueda OCR.");
   }
+  const modoZona = opciones.modo === "zona";
 
   const inicio = Date.now();
   const productos = productoRepository.obtenerProductosDesdeExcel();
-  const candidatos = extraerCandidatosDesdeTexto(textoLimpio);
+  const candidatos = extraerCandidatosAmpliados(textoLimpio);
   const exactas = [];
   const vistos = new Set();
 
@@ -119,16 +120,24 @@ async function buscarPorTextoOcr(texto) {
     exactas.push({ producto: exacta, candidato: c });
   }
 
-  const resultados = exactas.map((item) => item.producto);
+  let resultados = exactas.map((item) => item.producto);
   const coincidenciasExactas = exactas.length;
-  const pedirZona = coincidenciasExactas === 0;
+
+  if (modoZona) {
+    const terminoZona = textoLimpio.replace(/[\s\u00A0]+/g, " ").trim();
+    const terminosFuzzy = [...candidatos, terminoZona].filter(Boolean);
+    const similares = fusionarSimilares(productos, terminosFuzzy, 35);
+    resultados = fusionarResultadosUnicos(null, [...resultados, ...similares], 30);
+  }
+
+  const pedirZona = !modoZona && coincidenciasExactas === 0 && resultados.length === 0;
 
   return {
     resultados,
     meta: {
       tiempoMs: Date.now() - inicio,
       totalCatalogo: productos.length,
-      modo: "ocr",
+      modo: modoZona ? "zona" : "ocr",
       candidatosOcr: candidatos,
       candidatoCoincidente:
         coincidenciasExactas === 1 ? exactas[0].candidato : "",

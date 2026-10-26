@@ -137,6 +137,40 @@ function prioridadCandidato(codigo) {
   return 5;
 }
 
+function extraerCandidatosAmpliados(texto) {
+  const textoLimpio = String(texto || "").trim();
+  const candidatos = extraerCandidatosDesdeTexto(textoLimpio);
+  const vistos = new Set(candidatos.map((c) => c.toUpperCase()));
+  const agregar = (valor) => {
+    const v = String(valor || "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "");
+    if (!esCandidatoValido(v) || vistos.has(v)) {
+      return;
+    }
+    vistos.add(v);
+    candidatos.push(v);
+  };
+
+  for (const linea of textoLimpio.split(/\r?\n/)) {
+    agregar(linea);
+    for (const token of String(linea).split(/[\s,;:|/]+/)) {
+      agregar(token);
+    }
+  }
+
+  return candidatos.sort((a, b) => {
+    const pa = prioridadCandidato(a);
+    const pb = prioridadCandidato(b);
+    if (pa !== pb) {
+      return pa - pb;
+    }
+    return b.length - a.length;
+  });
+}
+
 module.exports = {
-  extraerCandidatosDesdeTexto
+  extraerCandidatosDesdeTexto,
+  extraerCandidatosAmpliados
 };
