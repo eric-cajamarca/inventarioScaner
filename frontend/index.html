@@ -11,6 +11,33 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <div id="pantallaLogin" class="login-overlay">
+      <form id="formLogin" class="login-card" autocomplete="on">
+        <h2>Inventario Scanner</h2>
+        <p class="muted">Inicia sesión para continuar</p>
+        <label for="loginUsuario">Usuario</label>
+        <input
+          id="loginUsuario"
+          name="username"
+          type="text"
+          autocomplete="username"
+          required
+        />
+        <label for="loginPassword">Contraseña</label>
+        <input
+          id="loginPassword"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required
+        />
+        <p id="loginError" class="login-error" hidden></p>
+        <button type="submit" id="loginSubmit" class="btn-primary">
+          Entrar
+        </button>
+      </form>
+    </div>
+
     <div id="loadingOverlay" class="loading-overlay" aria-hidden="true">
       <div class="loading-card">
         <div class="spinner" aria-hidden="true"></div>
@@ -18,12 +45,21 @@
       </div>
     </div>
 
-    <main class="container">
+    <main id="appPrincipal" class="container" hidden>
       <header class="app-header">
         <h1>Inventario Scanner</h1>
-        <button type="button" id="abrirModalSyncStock" class="btn-secondary btn-sync-header">
-          Sincronizar Stock (export web)
-        </button>
+        <div class="app-header__actions">
+          <span id="sesionUsuario" class="sesion-usuario" hidden></span>
+          <button type="button" id="abrirModalReconciliacion" class="btn-secondary btn-sync-header">
+            Reconciliar movimientos
+          </button>
+          <button type="button" id="abrirModalSyncStock" class="btn-secondary btn-sync-header">
+            Sincronizar Stock (export web)
+          </button>
+          <button type="button" id="cerrarSesionBtn" class="btn-secondary btn-sync-header">
+            Cerrar sesión
+          </button>
+        </div>
       </header>
       <p class="muted">
         <strong>Cámara:</strong> con <strong>Iniciar escaneo</strong> verás el
@@ -181,7 +217,7 @@
         <div class="table-wrap">
           <table class="tabla-similares">
             <thead>
-              <tr>
+              <tr id="resultadosTheadRow">
                 <th>Código</th>
                 <th>Producto</th>
                 <th>Marca</th>
@@ -297,6 +333,163 @@
           </button>
         </div>
         <pre id="syncStockResultado" class="sync-resultado" hidden></pre>
+      </div>
+    </div>
+
+    <div
+      id="modalReconciliacion"
+      class="modal-root modal-root--wide"
+      hidden
+      aria-hidden="true"
+    >
+      <div class="modal-backdrop" id="modalReconciliacionBackdrop" tabindex="-1"></div>
+      <div
+        class="modal-dialog modal-dialog--wide"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modalReconciliacionTitle"
+      >
+        <h2 id="modalReconciliacionTitle">Reconciliar movimientos</h2>
+        <p class="muted modal-desc">
+          Compara el stock teórico del período contra el stock actual del sistema.
+          <strong>Empareja por nombre de producto</strong> (columna Producto).
+          Sube un archivo aparte de <strong>stock anterior</strong> (inventario al
+          corte, p. ej. 30 mayo) — no uses <code>productos.xlsx</code> como base.
+          Fórmula:
+          <strong>Stock esperado = Stock anterior + Compras − Ventas</strong>.
+          Se compara con la columna <strong>Stock</strong> del export actual.
+          Resultado en <code>backend/data/reconciliacion_resultado_YYYYMMDD_HHMMSS.xlsx</code>.
+        </p>
+
+        <div class="recon-plantillas">
+          <p class="recon-plantillas__titulo">Plantillas para descargar</p>
+          <p class="muted recon-plantillas__hint">
+            Stock anterior, compras y ventas: <strong>Producto</strong> +
+            <strong>Cantidad</strong> (Código opcional). Stock actual: export del
+            sistema con <strong>Producto</strong> y <strong>Stock</strong>.
+            Si el mismo nombre aparece varias veces en compras/ventas, las
+            cantidades se <strong>suman</strong>.
+          </p>
+          <div class="recon-plantillas__links">
+            <a
+              class="btn-secondary recon-plantilla-link"
+              href="#"
+              data-plantilla="stock-anterior"
+              id="linkPlantillaStockAnterior"
+              >Descargar plantilla stock anterior</a
+            >
+            <a
+              class="btn-secondary recon-plantilla-link"
+              href="#"
+              data-plantilla="compras"
+              id="linkPlantillaCompras"
+              >Descargar plantilla compras</a
+            >
+            <a
+              class="btn-secondary recon-plantilla-link"
+              href="#"
+              data-plantilla="ventas"
+              id="linkPlantillaVentas"
+              >Descargar plantilla ventas</a
+            >
+            <a
+              class="btn-secondary recon-plantilla-link"
+              href="#"
+              data-plantilla="stock-actual"
+              id="linkPlantillaStockActual"
+              >Descargar plantilla stock actual</a
+            >
+          </div>
+        </div>
+
+        <div class="recon-upload-grid">
+          <div class="recon-upload-item">
+            <label class="sync-file-label" for="reconFileStockAnterior"
+              >Stock anterior (inventario al corte)</label
+            >
+            <input
+              id="reconFileStockAnterior"
+              type="file"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            />
+          </div>
+          <div class="recon-upload-item">
+            <label class="sync-file-label" for="reconFileCompras">Archivo de compras</label>
+            <input
+              id="reconFileCompras"
+              type="file"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            />
+          </div>
+          <div class="recon-upload-item">
+            <label class="sync-file-label" for="reconFileVentas">Archivo de ventas</label>
+            <input
+              id="reconFileVentas"
+              type="file"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            />
+          </div>
+          <div class="recon-upload-item">
+            <label class="sync-file-label" for="reconFileStockActual">Archivo stock actual (sistema)</label>
+            <input
+              id="reconFileStockActual"
+              type="file"
+              accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            />
+          </div>
+        </div>
+
+        <div id="reconResumenBox" class="sync-resumen-stock recon-resumen-box" hidden>
+          <p class="sync-resumen-stock__title">Resumen de la reconciliación</p>
+          <ul class="sync-resumen-stock__list">
+            <li>
+              <span id="reconProductosAnalizados">—</span>
+              · productos analizados
+            </li>
+            <li class="sync-resumen-stock__row">
+              <span class="sync-resumen-stock__row-text">
+                <span id="reconFaltantes">—</span>
+                · faltantes (sistema con menos stock del esperado)
+              </span>
+              <button
+                type="button"
+                id="btnVerReconFaltantes"
+                class="btn-secondary sync-resumen-stock__ver-lista"
+                disabled
+              >
+                Ver lista
+              </button>
+            </li>
+            <li class="sync-resumen-stock__row">
+              <span class="sync-resumen-stock__row-text">
+                <span id="reconSobrantes">—</span>
+                · sobrantes (sistema con más stock del esperado)
+              </span>
+              <button
+                type="button"
+                id="btnVerReconSobrantes"
+                class="btn-secondary sync-resumen-stock__ver-lista"
+                disabled
+              >
+                Ver lista
+              </button>
+            </li>
+            <li>
+              <span id="reconConformes">—</span>
+              · conformes (stock actual = stock esperado)
+            </li>
+          </ul>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="cerrarModalReconciliacion" class="btn-secondary">
+            Cerrar
+          </button>
+          <button type="button" id="ejecutarReconciliacion" class="btn-primary">
+            Ejecutar reconciliación
+          </button>
+        </div>
+        <pre id="reconResultado" class="sync-resultado" hidden></pre>
       </div>
     </div>
 

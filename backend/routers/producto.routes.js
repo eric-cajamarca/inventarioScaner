@@ -1,8 +1,10 @@
 const express = require("express");
 const multer = require("multer");
 const productoController = require("../controllers/producto.controller");
+const verificarToken = require("../midlewares/verificarToken");
 
 const router = express.Router();
+router.use(verificarToken);
 
 const uploadExportStock = multer({
   storage: multer.memoryStorage(),

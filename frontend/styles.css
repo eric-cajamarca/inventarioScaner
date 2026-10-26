@@ -21,6 +21,67 @@ body {
   line-height: 1.55;
 }
 
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: #eef2f7;
+}
+
+.login-overlay[hidden] {
+  display: none;
+}
+
+.login-card {
+  width: min(400px, 100%);
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 28px 24px;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+}
+
+.login-card h2 {
+  margin: 0 0 8px;
+}
+
+.login-card label {
+  display: block;
+  margin: 14px 0 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.login-card input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 16px;
+}
+
+.login-card .btn-primary {
+  width: 100%;
+  margin-top: 18px;
+}
+
+.login-error {
+  margin: 12px 0 0;
+  color: #b91c1c;
+  font-size: 0.92rem;
+}
+
+.sesion-usuario {
+  align-self: center;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
 .loading-overlay {
   position: fixed;
   inset: 0;
@@ -530,6 +591,13 @@ pre {
   margin: 0;
 }
 
+.app-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .btn-sync-header {
   flex-shrink: 0;
 }
@@ -699,4 +767,77 @@ pre {
 .sync-resumen-stock__aviso {
   margin: 8px 0 0;
   font-size: 0.78rem;
+}
+
+.modal-dialog--wide {
+  width: min(640px, 100%);
+}
+
+.modal-root--wide .modal-dialog {
+  max-height: min(92vh, 720px);
+}
+
+.recon-plantillas {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.recon-plantillas__titulo {
+  margin: 0 0 10px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.recon-plantillas__hint {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.recon-plantillas__links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recon-plantilla-link {
+  display: inline-block;
+  text-align: center;
+  text-decoration: none;
+  font-size: 0.85rem;
+  padding: 8px 12px;
+}
+
+.recon-upload-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.recon-upload-item input[type="file"] {
+  margin-bottom: 10px;
+}
+
+.recon-resumen-box {
+  margin-bottom: 14px;
+}
+
+.tabla-recon .celda-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabla-recon .celda-dif-neg {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.tabla-recon .celda-dif-pos {
+  color: #15803d;
+  font-weight: 600;
 }

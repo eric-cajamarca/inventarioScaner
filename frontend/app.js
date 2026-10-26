@@ -1,20 +1,66 @@
 function resolverApiBaseUrl() {
   if (window.location.protocol === "file:") {
-    return "http://localhost:3000";
+    return "http://localhost:3005";
   }
-  const puertosSoloFrontend = ["4200", "5500", "5173", "8080", "4173", "5000"];
+  const puertosSoloFrontend = [
+    "4400",
+    "4200",
+    "5500",
+    "5173",
+    "8080",
+    "4173",
+    "5000"
+  ];
   const port = window.location.port;
   if (puertosSoloFrontend.includes(port)) {
     const host = window.location.hostname;
-    return `http://${host}:3000`;
+    return `http://${host}:3005`;
   }
   return window.location.origin;
 }
 
 const API_BASE_URL = resolverApiBaseUrl();
+const TOKEN_STORAGE_KEY = "inventarioScannerToken";
+
+function obtenerToken() {
+  return sessionStorage.getItem(TOKEN_STORAGE_KEY) || "";
+}
+
+function guardarToken(token) {
+  sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+}
+
+function borrarToken() {
+  sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+async function apiFetch(ruta, opciones = {}) {
+  const headers = new Headers(opciones.headers || {});
+  const token = obtenerToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  const response = await fetch(`${API_BASE_URL}${ruta}`, {
+    ...opciones,
+    headers
+  });
+  if (response.status === 401) {
+    cerrarSesionUi(true);
+  }
+  return response;
+}
 
 const loadingOverlay = document.getElementById("loadingOverlay");
 const loadingText = document.getElementById("loadingText");
+const pantallaLogin = document.getElementById("pantallaLogin");
+const formLogin = document.getElementById("formLogin");
+const loginUsuarioEl = document.getElementById("loginUsuario");
+const loginPasswordEl = document.getElementById("loginPassword");
+const loginErrorEl = document.getElementById("loginError");
+const loginSubmitEl = document.getElementById("loginSubmit");
+const appPrincipal = document.getElementById("appPrincipal");
+const sesionUsuarioEl = document.getElementById("sesionUsuario");
+const cerrarSesionBtn = document.getElementById("cerrarSesionBtn");
 const estadoEl = document.getElementById("estado");
 const codigoInputEl = document.getElementById("codigoInput");
 const buscarBtnEl = document.getElementById("buscarBtn");
@@ -69,9 +115,31 @@ const btnVerDifPositiva = document.getElementById("btnVerDifPositiva");
 const resultadosBusquedaSection = document.getElementById(
   "resultadosBusquedaSection"
 );
+const resultadosTheadRow = document.getElementById("resultadosTheadRow");
+const abrirModalReconciliacion = document.getElementById("abrirModalReconciliacion");
+const modalReconciliacion = document.getElementById("modalReconciliacion");
+const modalReconciliacionBackdrop = document.getElementById(
+  "modalReconciliacionBackdrop"
+);
+const cerrarModalReconciliacion = document.getElementById("cerrarModalReconciliacion");
+const ejecutarReconciliacionBtn = document.getElementById("ejecutarReconciliacion");
+const reconFileStockAnterior = document.getElementById("reconFileStockAnterior");
+const reconFileCompras = document.getElementById("reconFileCompras");
+const reconFileVentas = document.getElementById("reconFileVentas");
+const reconFileStockActual = document.getElementById("reconFileStockActual");
+const reconResultado = document.getElementById("reconResultado");
+const reconResumenBox = document.getElementById("reconResumenBox");
+const reconProductosAnalizados = document.getElementById("reconProductosAnalizados");
+const reconFaltantes = document.getElementById("reconFaltantes");
+const reconSobrantes = document.getElementById("reconSobrantes");
+const reconConformes = document.getElementById("reconConformes");
+const btnVerReconFaltantes = document.getElementById("btnVerReconFaltantes");
+const btnVerReconSobrantes = document.getElementById("btnVerReconSobrantes");
 
 /** Último resumen cargado (refrescar resumen o tras sincronizar). */
 let ultimoResumenStockVsReal = null;
+/** @type {{ faltantes: object[], sobrantes: object[], conformes: object[] }|null} */
+let ultimoResultadoReconciliacion = null;
 
 let ultimoCodigoProcesado = "";
 let ultimoTimestamp = 0;
@@ -196,6 +264,7 @@ function renderResumenBusqueda(resultado) {
 }
 
 function renderTablaResultados(items) {
+  restaurarTheadBusqueda();
   resultadosBody.innerHTML = "";
   if (!items.length) {
     sinResultados.hidden = false;
@@ -214,6 +283,72 @@ function renderTablaResultados(items) {
       <td><button type="button" class="btn-elegir">Elegir</button></td>
     `;
     tr.querySelector("button").addEventListener("click", () => elegirProducto(item));
+    resultadosBody.appendChild(tr);
+  });
+}
+
+const THEAD_BUSQUEDA_HTML = `
+  <th>Código</th>
+  <th>Producto</th>
+  <th>Marca</th>
+  <th>Stock</th>
+  <th>Stock real</th>
+  <th title="Verificado">Verif.</th>
+  <th></th>
+`;
+
+const THEAD_RECON_HTML = `
+  <th>Código</th>
+  <th>Producto</th>
+  <th>Stock anterior</th>
+  <th>Compras</th>
+  <th>Ventas</th>
+  <th>Stock esperado</th>
+  <th>Stock sistema</th>
+  <th>Diferencia</th>
+`;
+
+function restaurarTheadBusqueda() {
+  if (resultadosTheadRow) {
+    resultadosTheadRow.innerHTML = THEAD_BUSQUEDA_HTML;
+  }
+  resultadosBusquedaSection?.classList.remove("tabla-recon");
+}
+
+function aplicarTheadReconciliacion() {
+  if (resultadosTheadRow) {
+    resultadosTheadRow.innerHTML = THEAD_RECON_HTML;
+  }
+  resultadosBusquedaSection?.classList.add("tabla-recon");
+}
+
+function renderTablaReconciliacion(items) {
+  aplicarTheadReconciliacion();
+  resultadosBody.innerHTML = "";
+  if (!items.length) {
+    sinResultados.hidden = false;
+    return;
+  }
+  sinResultados.hidden = true;
+  items.forEach((item) => {
+    const dif = Number(item.diferencia);
+    let claseDif = "";
+    if (dif < 0) {
+      claseDif = "celda-dif-neg";
+    } else if (dif > 0) {
+      claseDif = "celda-dif-pos";
+    }
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(String(item.codigo || ""))}</td>
+      <td>${escapeHtml(String(item.producto || ""))}</td>
+      <td class="celda-num">${escapeHtml(String(item.stockAnterior ?? item.stockBase ?? 0))}</td>
+      <td class="celda-num">${escapeHtml(String(item.compras ?? 0))}</td>
+      <td class="celda-num">${escapeHtml(String(item.ventas ?? 0))}</td>
+      <td class="celda-num">${escapeHtml(String(item.stockEsperado ?? 0))}</td>
+      <td class="celda-num">${escapeHtml(String(item.stockActual ?? 0))}</td>
+      <td class="celda-num ${claseDif}">${escapeHtml(String(item.diferencia ?? 0))}</td>
+    `;
     resultadosBody.appendChild(tr);
   });
 }
@@ -332,7 +467,7 @@ async function guardarStockEnExcel() {
   guardandoStock = true;
   setCargando(true, "Guardando en Excel…");
   try {
-    const response = await fetch(`${API_BASE_URL}/api/productos/stock-real`, {
+    const response = await apiFetch("/api/productos/stock-real", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body)
@@ -371,7 +506,7 @@ async function buscarCodigo(codigo) {
   setEstado("Buscando en Excel…", "buscando");
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/productos/buscar`, {
+    const response = await apiFetch("/api/productos/buscar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ codigo: codigoLimpio })
@@ -409,7 +544,7 @@ async function buscarPorTextoOcr(texto) {
   setEstado("Buscando en Excel…", "buscando");
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/productos/buscar-ocr`, {
+    const response = await apiFetch("/api/productos/buscar-ocr", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ texto: textoLimpio })
@@ -1137,8 +1272,8 @@ function pintarListaDiscrepanciaEnTablaResultados(lista, tipo) {
 async function mostrarListaDiscrepanciaEnTabla(tipo) {
   setCargando(true, "Cargando lista de productos…");
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/productos/discrepancias-stock-lista?tipo=${encodeURIComponent(tipo)}`
+    const response = await apiFetch(
+      `/api/productos/discrepancias-stock-lista?tipo=${encodeURIComponent(tipo)}`
     );
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.ok) {
@@ -1257,9 +1392,7 @@ async function cargarResumenStockVsRealDesdeServidor() {
     btnRefrescarResumenStock.disabled = true;
   }
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/productos/resumen-stock-vs-real`
-    );
+    const response = await apiFetch("/api/productos/resumen-stock-vs-real");
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.ok || !data.resumen) {
       throw new Error(data.message || "No se pudo obtener el resumen.");
@@ -1402,13 +1535,10 @@ async function ejecutarSincronizarStockDesdeExport() {
   }
   setCargando(true, "Comparando y actualizando Stock…");
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/productos/sincronizar-stock-export`,
-      {
-        method: "POST",
-        body: fd
-      }
-    );
+    const response = await apiFetch("/api/productos/sincronizar-stock-export", {
+      method: "POST",
+      body: fd
+    });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(data.message || "No se pudo sincronizar.");
@@ -1493,7 +1623,442 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape" && modalSyncStock && !modalSyncStock.hidden) {
     cerrarModalSincronizarStock();
   }
+  if (ev.key === "Escape" && modalReconciliacion && !modalReconciliacion.hidden) {
+    cerrarModalReconciliacionFn();
+  }
 });
+
+async function descargarPlantillaReconciliacion(tipo) {
+  const response = await apiFetch(
+    `/api/reconciliacion/plantillas/${encodeURIComponent(tipo)}`
+  );
+  if (!response.ok) {
+    throw new Error("No se pudo descargar la plantilla.");
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^"]+)"?/i);
+  const nombre = match?.[1] || `plantilla-${tipo}.xlsx`;
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement("a");
+  enlace.href = url;
+  enlace.download = nombre;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  URL.revokeObjectURL(url);
+}
+
+function configurarEnlacesPlantillasReconciliacion() {
+  document.querySelectorAll(".recon-plantilla-link").forEach((link) => {
+    link.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      const tipo = link.getAttribute("data-plantilla");
+      if (!tipo) {
+        return;
+      }
+      try {
+        await descargarPlantillaReconciliacion(tipo);
+      } catch (error) {
+        console.error("Descargar plantilla:", error);
+        setEstado(error.message || "No se pudo descargar la plantilla.", "error");
+      }
+    });
+  });
+}
+
+function abrirModalReconciliacionFn() {
+  if (!modalReconciliacion) {
+    return;
+  }
+  modalReconciliacion.hidden = false;
+  modalReconciliacion.setAttribute("aria-hidden", "false");
+  if (reconResultado) {
+    reconResultado.hidden = true;
+    reconResultado.textContent = "";
+    reconResultado.classList.remove("err");
+  }
+  if (reconResumenBox) {
+    reconResumenBox.hidden = true;
+  }
+  if (reconFileStockAnterior) {
+    reconFileStockAnterior.value = "";
+  }
+  if (reconFileCompras) {
+    reconFileCompras.value = "";
+  }
+  if (reconFileVentas) {
+    reconFileVentas.value = "";
+  }
+  if (reconFileStockActual) {
+    reconFileStockActual.value = "";
+  }
+  ultimoResultadoReconciliacion = null;
+  actualizarBotonesVerReconciliacion(null);
+}
+
+function cerrarModalReconciliacionFn() {
+  if (!modalReconciliacion) {
+    return;
+  }
+  modalReconciliacion.hidden = true;
+  modalReconciliacion.setAttribute("aria-hidden", "true");
+}
+
+function actualizarBotonesVerReconciliacion(data) {
+  const ok = Boolean(data);
+  if (btnVerReconFaltantes) {
+    btnVerReconFaltantes.disabled = !ok || (data?.faltantes?.length ?? 0) === 0;
+  }
+  if (btnVerReconSobrantes) {
+    btnVerReconSobrantes.disabled = !ok || (data?.sobrantes?.length ?? 0) === 0;
+  }
+}
+
+function pintarResumenReconciliacion(data) {
+  if (!reconResumenBox) {
+    return;
+  }
+  const meta = data?.meta || {};
+  reconResumenBox.hidden = false;
+  if (reconProductosAnalizados) {
+    reconProductosAnalizados.textContent = String(meta.productosAnalizados ?? "—");
+  }
+  if (reconFaltantes) {
+    reconFaltantes.textContent = String(meta.productosFaltante ?? 0);
+  }
+  if (reconSobrantes) {
+    reconSobrantes.textContent = String(meta.productosSobrante ?? 0);
+  }
+  if (reconConformes) {
+    reconConformes.textContent = String(meta.productosConformes ?? 0);
+  }
+  actualizarBotonesVerReconciliacion(data);
+}
+
+function formatearDetalleReconciliacion(data) {
+  const m = data?.meta || {};
+  const ar = m.archivoResultado || {};
+  const lineas = [
+    m.formula || "",
+    "",
+    `Criterio de emparejamiento: ${m.criterioEmparejamiento || "Producto"}`,
+    "",
+    "— Archivos y columnas —",
+    `Base del cálculo: archivo stock anterior (Producto + Cantidad o Stock)`,
+    `Columna cantidad compras/ventas: «${m.compras?.encabezadoCantidad ?? "Cantidad"}» / «${m.ventas?.encabezadoCantidad ?? "Cantidad"}»`,
+    m.stockActual?.nota || "",
+    "",
+    `Resultado guardado en: ${ar.rutaRelativa || ar.rutaAbsoluta || "—"}`,
+    ar.formato ? `Formato archivo: ${ar.formato}` : "",
+    "",
+    "— Stock anterior —",
+    `Filas procesadas: ${m.stockAnterior?.filasProcesadas ?? "—"}`,
+    `Productos únicos: ${m.stockAnterior?.productosUnicos ?? "—"}`,
+    `Filas nombre duplicado (sumadas): ${m.stockAnterior?.filasNombreDuplicado ?? "—"}`,
+    "",
+    "— Compras —",
+    `Filas procesadas: ${m.compras?.filasProcesadas ?? "—"}`,
+    `Productos únicos: ${m.compras?.productosUnicos ?? "—"}`,
+    `Filas nombre duplicado (sumadas): ${m.compras?.filasNombreDuplicado ?? "—"}`,
+    "",
+    "— Ventas —",
+    `Filas procesadas: ${m.ventas?.filasProcesadas ?? "—"}`,
+    `Productos únicos: ${m.ventas?.productosUnicos ?? "—"}`,
+    `Filas nombre duplicado (sumadas): ${m.ventas?.filasNombreDuplicado ?? "—"}`,
+    "",
+    "— Export stock actual (columna Stock) —",
+    `Filas procesadas: ${m.stockActual?.filasProcesadas ?? "—"}`,
+    `Productos únicos: ${m.stockActual?.productosUnicos ?? "—"}`,
+    `Filas omitidas (código vacío o Stock vacío/inválido): ${m.stockActual?.filasOmitidas ?? "—"}`,
+    "",
+    `Productos analizados: ${m.productosAnalizados ?? "—"}`,
+    `Productos con compras aplicadas: ${m.productosConCompras ?? "—"}`,
+    `Productos con ventas aplicadas: ${m.productosConVentas ?? "—"}`,
+    `Faltantes: ${m.productosFaltante ?? 0}`,
+    `Sobrantes: ${m.productosSobrante ?? 0}`,
+    `Conformes: ${m.productosConformes ?? 0}`
+  ];
+  return lineas.join("\n");
+}
+
+function pintarListaReconciliacionEnTabla(lista, tipo) {
+  cerrarModalReconciliacionFn();
+  cerrarModalSincronizarStock();
+  ocrVistaEl.hidden = true;
+  renderPanelProducto(null);
+  const etiqueta =
+    tipo === "faltantes"
+      ? "faltantes (sistema con menos stock del esperado)"
+      : "sobrantes (sistema con más stock del esperado)";
+  resumenBusqueda.textContent = `${lista.length} producto(s) ${etiqueta}.`;
+  resumenBusqueda.className = "";
+  renderTablaReconciliacion(lista);
+  if (resultadosBusquedaSection) {
+    resultadosBusquedaSection.classList.add("result-card--destacado");
+    window.setTimeout(() => {
+      resultadosBusquedaSection.classList.remove("result-card--destacado");
+    }, 4000);
+    window.requestAnimationFrame(() => {
+      resultadosBusquedaSection.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    });
+  }
+  setEstado("Listado de reconciliación mostrado en la tabla de resultados.", "ok");
+}
+
+function mostrarListaReconciliacion(tipo) {
+  if (!ultimoResultadoReconciliacion) {
+    setEstado("Ejecuta primero la reconciliación.", "idle");
+    return;
+  }
+  const lista =
+    tipo === "faltantes"
+      ? ultimoResultadoReconciliacion.faltantes || []
+      : ultimoResultadoReconciliacion.sobrantes || [];
+  if (!lista.length) {
+    setEstado("No hay productos en esa categoría.", "idle");
+    return;
+  }
+  pintarListaReconciliacionEnTabla(lista, tipo);
+}
+
+async function ejecutarReconciliacionMovimientos() {
+  if (!reconFileStockAnterior?.files?.length) {
+    if (reconResultado) {
+      reconResultado.hidden = false;
+      reconResultado.classList.add("err");
+      reconResultado.textContent =
+        "Elige el archivo de stock anterior (inventario al corte).";
+    }
+    return;
+  }
+  if (!reconFileCompras?.files?.length) {
+    if (reconResultado) {
+      reconResultado.hidden = false;
+      reconResultado.classList.add("err");
+      reconResultado.textContent = "Elige el archivo de compras.";
+    }
+    return;
+  }
+  if (!reconFileVentas?.files?.length) {
+    if (reconResultado) {
+      reconResultado.hidden = false;
+      reconResultado.classList.add("err");
+      reconResultado.textContent = "Elige el archivo de ventas.";
+    }
+    return;
+  }
+  if (!reconFileStockActual?.files?.length) {
+    if (reconResultado) {
+      reconResultado.hidden = false;
+      reconResultado.classList.add("err");
+      reconResultado.textContent = "Elige el archivo de stock actual del sistema.";
+    }
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append("stockAnterior", reconFileStockAnterior.files[0]);
+  fd.append("compras", reconFileCompras.files[0]);
+  fd.append("ventas", reconFileVentas.files[0]);
+  fd.append("stockActual", reconFileStockActual.files[0]);
+
+  if (ejecutarReconciliacionBtn) {
+    ejecutarReconciliacionBtn.disabled = true;
+  }
+  setCargando(true, "Reconciliando movimientos…");
+  try {
+    const response = await apiFetch("/api/reconciliacion/ejecutar", {
+      method: "POST",
+      body: fd
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.message || "No se pudo ejecutar la reconciliación.");
+    }
+    ultimoResultadoReconciliacion = {
+      faltantes: data.faltantes || [],
+      sobrantes: data.sobrantes || [],
+      conformes: data.conformes || []
+    };
+    pintarResumenReconciliacion(data);
+    if (reconResultado) {
+      reconResultado.hidden = false;
+      reconResultado.classList.remove("err");
+      reconResultado.textContent = formatearDetalleReconciliacion(data);
+    }
+    const meta = data.meta || {};
+    setEstado(
+      `Reconciliación lista: ${meta.productosFaltante ?? 0} faltante(s), ${meta.productosSobrante ?? 0} sobrante(s).`,
+      "ok"
+    );
+  } catch (error) {
+    if (reconResultado) {
+      reconResultado.hidden = false;
+      reconResultado.classList.add("err");
+      reconResultado.textContent = error.message || "Error al reconciliar.";
+    }
+    setEstado("Error en reconciliación de movimientos.", "error");
+    console.error("Reconciliación movimientos:", error);
+  } finally {
+    setCargando(false);
+    if (ejecutarReconciliacionBtn) {
+      ejecutarReconciliacionBtn.disabled = false;
+    }
+  }
+}
+
+if (abrirModalReconciliacion && modalReconciliacion) {
+  abrirModalReconciliacion.addEventListener("click", () => {
+    abrirModalReconciliacionFn();
+  });
+}
+if (cerrarModalReconciliacion) {
+  cerrarModalReconciliacion.addEventListener("click", () =>
+    cerrarModalReconciliacionFn()
+  );
+}
+if (modalReconciliacionBackdrop) {
+  modalReconciliacionBackdrop.addEventListener("click", () =>
+    cerrarModalReconciliacionFn()
+  );
+}
+if (ejecutarReconciliacionBtn) {
+  ejecutarReconciliacionBtn.addEventListener("click", () =>
+    ejecutarReconciliacionMovimientos()
+  );
+}
+if (btnVerReconFaltantes) {
+  btnVerReconFaltantes.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    mostrarListaReconciliacion("faltantes");
+  });
+}
+if (btnVerReconSobrantes) {
+  btnVerReconSobrantes.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    mostrarListaReconciliacion("sobrantes");
+  });
+}
+
+function mostrarErrorLogin(texto) {
+  if (!loginErrorEl) {
+    return;
+  }
+  if (!texto) {
+    loginErrorEl.hidden = true;
+    loginErrorEl.textContent = "";
+    return;
+  }
+  loginErrorEl.hidden = false;
+  loginErrorEl.textContent = texto;
+}
+
+function mostrarAppAutenticada(usuario) {
+  if (pantallaLogin) {
+    pantallaLogin.hidden = true;
+  }
+  if (appPrincipal) {
+    appPrincipal.hidden = false;
+  }
+  if (sesionUsuarioEl) {
+    sesionUsuarioEl.hidden = !usuario;
+    sesionUsuarioEl.textContent = usuario ? `Sesión: ${usuario}` : "";
+  }
+}
+
+function cerrarSesionUi(silencioso = false) {
+  borrarToken();
+  if (appPrincipal) {
+    appPrincipal.hidden = true;
+  }
+  if (pantallaLogin) {
+    pantallaLogin.hidden = false;
+  }
+  if (sesionUsuarioEl) {
+    sesionUsuarioEl.hidden = true;
+    sesionUsuarioEl.textContent = "";
+  }
+  if (loginPasswordEl) {
+    loginPasswordEl.value = "";
+  }
+  if (!silencioso) {
+    mostrarErrorLogin("");
+  } else {
+    mostrarErrorLogin("Sesión vencida. Inicia sesión de nuevo.");
+  }
+}
+
+async function verificarSesionGuardada() {
+  const token = obtenerToken();
+  if (!token) {
+    cerrarSesionUi(false);
+    return;
+  }
+  try {
+    const response = await apiFetch("/api/auth/me");
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.message || "Sesión inválida.");
+    }
+    mostrarAppAutenticada(data.usuario);
+  } catch (error) {
+    console.error("Verificar sesión:", error);
+    cerrarSesionUi(true);
+  }
+}
+
+async function enviarLogin(ev) {
+  ev.preventDefault();
+  const usuario = String(loginUsuarioEl?.value || "").trim();
+  const password = String(loginPasswordEl?.value || "");
+  if (!usuario || !password) {
+    mostrarErrorLogin("Escribe usuario y contraseña.");
+    return;
+  }
+  if (loginSubmitEl) {
+    loginSubmitEl.disabled = true;
+  }
+  mostrarErrorLogin("");
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usuario, password })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok || !data.token) {
+      throw new Error(data.message || "No se pudo iniciar sesión.");
+    }
+    guardarToken(data.token);
+    mostrarAppAutenticada(data.usuario);
+    if (loginPasswordEl) {
+      loginPasswordEl.value = "";
+    }
+  } catch (error) {
+    console.error("Login:", error);
+    mostrarErrorLogin(error.message || "No se pudo iniciar sesión.");
+  } finally {
+    if (loginSubmitEl) {
+      loginSubmitEl.disabled = false;
+    }
+  }
+}
+
+if (formLogin) {
+  formLogin.addEventListener("submit", enviarLogin);
+}
+if (cerrarSesionBtn) {
+  cerrarSesionBtn.addEventListener("click", () => cerrarSesionUi(false));
+}
+
+configurarEnlacesPlantillasReconciliacion();
+verificarSesionGuardada();
 
 if (!window.Quagga) {
   setEstado("Esperando Quagga… Recarga la página.", "error");

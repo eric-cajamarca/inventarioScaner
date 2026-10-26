@@ -1,0 +1,11 @@
+{
+  "name": "inventario-scanner",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "postinstall": "npm install --prefix backend",
+    "start": "node backend/app.js"
+  }
+}

@@ -6,7 +6,9 @@
     "dev": "nodemon app.js",
     "start": "node app.js",
     "test": "node --test",
-    "excel:exportar-limpio": "node scripts/excel-exportar-limpio.js"
+    "excel:exportar-limpio": "node scripts/excel-exportar-limpio.js",
+    "plantillas:generar": "node scripts/generar-plantillas.js",
+    "test:encoding": "node scripts/verificar-encoding-movimientos.js"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +19,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "fuse.js": "^7.3.0",
+    "jsonwebtoken": "^9.0.2",
     "multer": "^2.1.1",
     "xlsx": "^0.18.5"
   },
